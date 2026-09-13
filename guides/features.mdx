@@ -183,11 +183,54 @@ A global badge system managed by bot developers.
 - **`/badge take <id> <user>`** — Remove a badge from a user
 - **`/badge list`** — List all available badges
 
+<Warning>
+The reserved **`bot-staff`** badge (🛡️ Bot Staff) cannot be created, edited, deleted, given, or taken through `/badge`. Use `/botstaff` to manage it. The badge is display-only — staff privilege comes from the `BotStaff` Mongo ACL, not from holding the badge.
+</Warning>
+
 ### Viewing Badges
 
 Badges appear on user info displays:
 - `/user info` command
 - **Info** context menu (right-click → Info)
+
+---
+
+## Global Bot Staff
+
+Cross-guild bot staff replaces the legacy `config.moderation.staffRoles` approach. Staff privilege is stored in MongoDB and managed by developers.
+
+### How it works
+
+1. A developer runs `/botstaff add <user>` to grant global staff access.
+2. The bot upserts a `BotStaff` row (`userId`, `addedBy`, `addedAt`) and syncs the reserved `bot-staff` badge.
+3. Staff-only commands (`/staffonly`, `/nsfw`, and any command with `options.staffOnly: true`) check the ACL at runtime.
+4. Users in `config.moderation.developers` always pass the staff gate, even without a `BotStaff` row.
+
+### Managing staff
+
+| Command | Purpose |
+|---------|---------|
+| `/botstaff add <user>` | Add a user to global bot staff |
+| `/botstaff remove <user>` | Remove a user from global bot staff |
+| `/botstaff list` | List all staff with audit metadata |
+| `/botstaff migrate` | One-time import from legacy `moderation.staffRoles` |
+
+### Upgrading from `staffRoles`
+
+<Warning>
+Do not deploy the BotStaff update with an empty ACL and expect staff-only commands to keep working. There is no silent fallback to guild roles.
+</Warning>
+
+**Operator cutover checklist:**
+
+1. While `moderation.staffRoles` is still in your live `config.js`, run **`/botstaff migrate`**.
+2. If you already removed `staffRoles`, add each person with **`/botstaff add`** before deploy.
+3. Run **`npx prisma db push`** to create the `botstaff` collection.
+4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+
+The migrate subcommand reads legacy role IDs from config, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and imports members who hold any listed role.
+
+See [Configuration](/get-started/configuration#global-bot-staff) and [Security](/security#global-bot-staff-acl) for more detail.
 
 ---
 

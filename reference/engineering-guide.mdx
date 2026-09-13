@@ -18,7 +18,7 @@ Required local setup:
 1. Run `npm i`.
 2. Copy `.env.example` to `.env`.
 3. Copy `src/example.config.js` to `src/config.js`.
-4. Fill in Discord application IDs/tokens, MongoDB URIs, guild IDs, stat channel IDs, developer user IDs, and staff role IDs.
+4. Fill in Discord application IDs/tokens, MongoDB URIs, guild IDs, stat channel IDs, and developer user IDs.
 5. Set `DATABASE_URL` for Prisma CLI commands. The runtime client reads the MongoDB URI from `src/config.js`, so keep `DATABASE_URL` aligned with the selected runtime URI when generating or pushing schema metadata.
 6. Run `npx prisma generate` after installing dependencies or changing `prisma/schema.prisma`.
 7. Run `npm run dev` for nodemon or `npm start` for node.
@@ -50,7 +50,7 @@ Configuration constraints:
 
 Persistence now runs through Prisma v6 with the MongoDB provider:
 
-- `prisma/schema.prisma` defines the generated client models and maps them to existing MongoDB collections with `@@map`, such as `ecoschemas`, `users`, `badges`, `afks`, `xps`, `welcomes`, `tickets`, `guildschemas`, `chatbots`, and `jtcsetups`.
+- `prisma/schema.prisma` defines the generated client models and maps them to existing MongoDB collections with `@@map`, such as `ecoschemas`, `users`, `badges`, `botstaff`, `afks`, `xps`, `welcomes`, `tickets`, `guildschemas`, `chatbots`, and `jtcsetups`.
 - `src/handlers/prisma.js` exports a singleton `prisma` client and `connectPrisma()`. The client is constructed with `datasourceUrl: config.handler.mongodb.uri`.
 - Files in `src/schemas/**` are compatibility modules that export Prisma delegates, for example `src/schemas/EcoSchema.js` exports `prisma.ecoSchema` and `src/schemas/GuildSchema.js` exports `prisma.guildSchema`.
 - The legacy `src/handlers/mongoose.js` file remains in the tree, but `ExtendedClient` imports `src/handlers/prisma.js`. Do not add new imports of the Mongoose handler unless Mongoose is intentionally restored as a dependency.
@@ -133,7 +133,8 @@ Permission and safety gates are split across validators in `src/events/validatio
 - Developer-only slash commands use `devCommandValidator.js` and `src/utils/getLocalDevCommands.js`.
 - `devOnly: true` or `options.developers: true`: user must be listed in `config.moderation.developers`. Regular slash/context/component validators compare against `interaction.member.id`; the developer-command validator compares against `interaction.user.id`.
 - Missing or empty `config.moderation.developers`: developer-only commands in `devCommandValidator.js` are denied as misconfigured.
-- `options.staffOnly: true`: enforced by `devCommandValidator.js`; the member must have one of `config.moderation.staffRoles`.
+- `options.staffOnly: true`: enforced by `devCommandValidator.js`; the user must be listed in `config.moderation.developers` or in the Mongo `BotStaff` collection (`userId` ACL). Guild roles are not checked.
+- Global bot staff is managed with `/botstaff` (developer-only). It writes `BotStaff` records and syncs the reserved `bot-staff` badge (display-only; privilege comes from Mongo, not the badge).
 - `options.nsfw: true`: enforced by `devCommandValidator.js`; guild channel interactions must run in an NSFW channel.
 - `testMode: true`: command must run in `config.handler.guildId`.
 - `userPermissions`: member must have each listed Discord permission.
@@ -141,6 +142,19 @@ Permission and safety gates are split across validators in `src/events/validatio
 - Component validators also prevent users from interacting with another user's command-owned button or select menu when `interaction.message.interaction` is present.
 
 See [Security](/security) for the operator-facing permission and sandbox documentation.
+
+### Cutover from `moderation.staffRoles`
+
+`config.moderation.staffRoles` was removed in favor of the Mongo `BotStaff` ACL. Operators upgrading must not deploy with an empty ACL and expect staff-only commands to keep working.
+
+**Recommended upgrade checklist**
+
+1. Before removing `staffRoles` from your live `src/config.js`, run `/botstaff migrate` while the legacy role IDs are still present. Migration reads `moderation.staffRoles`, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and creates `BotStaff` rows (with badge sync) for members who hold any listed role.
+2. If you already removed `staffRoles`, add each person manually with `/botstaff add <user>` before deploy.
+3. Run `npx prisma db push` so the `botstaff` collection exists.
+4. Confirm with `/botstaff list`, then remove `staffRoles` from config.
+
+**Fail-closed behavior:** `options.staffOnly` denies non-developers who are not in `BotStaff`. If the collection is empty, the denial message explicitly tells operators to run `/botstaff migrate` or `/botstaff add` — there is no silent fallback to guild roles.
 
 Command execution contracts:
 

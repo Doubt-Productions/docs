@@ -84,6 +84,33 @@ Global badge definitions (not per-guild).
 
 **Used by:** `/badge` (create/edit/delete/give/take/list), user info displays
 
+<Note>
+The reserved `bot-staff` badge (🛡️ Bot Staff) is created and assigned automatically by `/botstaff`. It cannot be managed through `/badge` — see [Security](/security#global-bot-staff-acl).
+</Note>
+
+---
+
+### BotStaff
+
+Global bot staff access-control list — one row per staff member (cross-guild).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | ObjectId | Auto-generated primary key |
+| `userId` | String | Discord user ID (unique) |
+| `addedBy` | String | Discord user ID of the developer who added this staff member |
+| `addedAt` | DateTime | When the staff member was added (default: now) |
+
+**Collection:** `botstaff`
+
+**Used by:** `/botstaff` (add/remove/list/migrate), `staffOnly` command gate in `devCommandValidator.js`
+
+**Indexes:** `userId` is unique — one `BotStaff` row per Discord user.
+
+<Warning>
+After schema changes that add this model, run `npx prisma db push` before using `/botstaff` or staff-only commands in production.
+</Warning>
+
 ---
 
 ### Afk

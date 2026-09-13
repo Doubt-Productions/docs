@@ -80,7 +80,6 @@ module.exports = {
   },
   moderation: {
     developers: [""],    // Array of user IDs with developer access
-    staffRoles: [""],    // Array of role IDs for staff commands
   },
   handler: {
     prefix: "?",         // Default prefix for prefix commands
@@ -109,9 +108,30 @@ Array of Discord user ID strings. Users listed here can use developer-only comma
 
 See [Security](/security) for eval sandbox rules and developer command gates.
 
-#### `moderation.staffRoles`
+#### Global bot staff
 
-Array of Discord role ID strings. Members with any of these roles can use staff-only commands.
+Cross-guild bot staff is stored in MongoDB (`BotStaff` collection) and managed with `/botstaff`. Staff-only commands check that ACL at runtime — **not** guild roles and **not** badge assignments.
+
+| Who | Staff-only access |
+|-----|-------------------|
+| Users in `moderation.developers` | Always allowed |
+| Users with a `BotStaff` row | Allowed |
+| Everyone else | Denied (fail-closed) |
+
+The reserved `bot-staff` badge (🛡️ Bot Staff) is synced when staff are added or removed, but it is **display-only**. Privilege never comes from "has badge."
+
+<Warning>
+`config.moderation.staffRoles` was removed. Do not deploy with an empty `BotStaff` collection and expect staff-only commands to keep working — there is no silent fallback to guild roles.
+</Warning>
+
+**Cutover checklist** (upgrade from `staffRoles`):
+
+1. While `moderation.staffRoles` is still in your live `config.js`, run **`/botstaff migrate`** to import support-guild members who hold those roles into `BotStaff`.
+2. If you already removed `staffRoles`, add each person with **`/botstaff add <user>`** before deploy.
+3. Run **`npx prisma db push`** to create the `botstaff` collection.
+4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+
+See [Security](/security#global-bot-staff-acl) for ACL behavior and [Database](/reference/database#botstaff) for the schema.
 
 #### `handler.commands.prefix`
 
