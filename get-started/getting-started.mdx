@@ -127,6 +127,32 @@ You should see:
 - `Logged in on discord as: YourBot#1234`
 - `Running on http://0.0.0.0:8080`
 
+## Hosting (Pterodactyl & panels)
+
+On Pterodactyl and similar server panels, set the startup command to sync Prisma schema metadata before launching the bot:
+
+```bash
+npx prisma db push && npm start
+```
+
+For a more defensive sequence (e.g. after a fresh egg install or schema change):
+
+```bash
+npx prisma generate && npx prisma db push && node .
+```
+
+<Warning>
+`DATABASE_URL` must match the runtime Mongo URI — the same database the bot uses via `src/config.js`. Prisma CLI reads `DATABASE_URL`; the runtime client uses `config.handler.mongodb.uri`.
+</Warning>
+
+<Note>
+Prisma is a **devDependency**. Eggs or hosts that omit `devDependencies` may need `npx prisma@6 db push` (or an explicit Prisma install) instead of bare `npx prisma`.
+</Note>
+
+`/botstaff migrate` is a Discord-side command you run **after** the bot boots — it is not part of the panel startup command.
+
+Usual npm scripts: `npm start` runs `node .` (entry point `src/index.js`); `npm run dev` runs nodemon for local development.
+
 ## Step 8: Verify
 
 1. Check the health endpoint: `curl http://localhost:8080/`

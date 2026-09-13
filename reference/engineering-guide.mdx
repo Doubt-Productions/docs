@@ -24,6 +24,10 @@ Required local setup:
 7. Run `npm run dev` for nodemon or `npm start` for node.
 8. Run `npm test` before opening a PR.
 
+<Note>
+**Pterodactyl / panel hosting:** recommended startup command is `npx prisma db push && npm start`. A more defensive variant is `npx prisma generate && npx prisma db push && node .`. Keep `DATABASE_URL` aligned with the runtime Mongo URI in `src/config.js`. Prisma is a devDependency — hosts that omit devDependencies may need `npx prisma@6 db push`. `/botstaff migrate` runs in Discord after boot, not in the startup command. `npm start` → `node .`; `npm run dev` → nodemon.
+</Note>
+
 See [Getting Started](/get-started/getting-started) for step-by-step setup instructions.
 
 Environment variables used by the code:
