@@ -67,6 +67,34 @@ Everyone else receives an ephemeral denial. Opening a ticket from the panel is s
 
 Follow-up setup components (welcome and ticket flows) also require Manage Server via `setupGuard.js`. Channel and role picker collectors bind to the member who triggered that step — another member cannot answer those collectors, even if they also have Manage Server.
 
+## Global bot staff ACL
+
+Staff-only developer commands (`options.staffOnly: true`, such as `/staffonly` and `/nsfw`) use a **Mongo-backed access-control list**, not guild roles.
+
+### Privilege source of truth
+
+| Layer | Role |
+|-------|------|
+| `BotStaff` Mongo collection | **ACL** — determines who may run `staffOnly` commands |
+| `config.moderation.developers` | Developers always pass the `staffOnly` gate |
+| `bot-staff` badge (🛡️ Bot Staff) | **Display-only** public mark; privilege is never "has badge" |
+
+The reserved badge ID is `bot-staff`. `/badge` cannot create, edit, delete, give, or take it — management is developer-only via `/botstaff`.
+
+### Fail-closed behavior
+
+`staffOnly` denies non-developers who are not in `BotStaff`. There is **no** fallback to `moderation.staffRoles` or guild role membership.
+
+If the `BotStaff` collection is empty, the denial message explicitly tells operators to run `/botstaff migrate` (while legacy `staffRoles` is still in config) or `/botstaff add` for each person. Staff-only commands do not silently work for anyone until the ACL is populated.
+
+### Who can manage staff
+
+Only users in `config.moderation.developers` can run `/botstaff` (`add`, `remove`, `list`, `migrate`). Each `add` or `migrate` action records `addedBy` and `addedAt` in Mongo.
+
+<Tip>
+After adding or removing staff, use `/botstaff list` to verify the ACL before removing legacy `staffRoles` from config.
+</Tip>
+
 ## Defense in depth
 
 | Surface | Primary gate |
@@ -76,3 +104,5 @@ Follow-up setup components (welcome and ticket flows) also require Manage Server
 | Ticket close button | Opener, support role, or Manage Channels |
 | `/eval` and `?eval` | Developer allowlist + VM sandbox |
 | Other `devOnly/` commands | Developer allowlist (fail-closed) |
+| `staffOnly` dev commands | Developer allowlist **or** `BotStaff` Mongo ACL (fail-closed) |
+| Reserved `bot-staff` badge | Locked in `/badge`; managed only via `/botstaff` |
