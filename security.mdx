@@ -3,11 +3,13 @@ title: "Security"
 description: "Permission gates, eval sandbox, ticket close rules, and setup authorization for Doubt Discord Bot"
 ---
 
-This page documents permission gates, sandboxing, and authorization checks from the security hardening work in [PR #130](https://github.com/Doubt-Productions/Doubt-Discord-Bot/pull/130). Behavior is verified from source on `main`.
+<Note>
+This page documents operator-facing security behavior from [PR #130](https://github.com/Doubt-Productions/Doubt-Discord-Bot/pull/130) on the Doubt Discord Bot `main` branch. It covers permission gates, sandboxing, and authorization checks — not every change in that PR (for example health-server bind address or intent trimming).
+</Note>
 
 ## Slash command Discord permissions
 
-Several slash commands set Discord `default_member_permissions` when registered. Discord hides these commands from members who lack the permission in the command picker. The bot also enforces the same permissions at runtime.
+Several slash commands set Discord `default_member_permissions` when registered. Discord hides these commands from members who lack the permission in the command picker. The bot also enforces the same permissions at runtime via `userPermissions` in the command validator.
 
 | Command | Discord permission |
 |---------|-------------------|
@@ -23,15 +25,17 @@ Commands without `default_member_permissions` (economy, general, info, utility `
 
 ### Syncing permission changes after deploy
 
-Command registration runs when the bot becomes ready and syncs `default_member_permissions` to Discord.
+Command registration runs when the bot becomes ready and syncs `default_member_permissions` to Discord via `registerCommands.js`.
 
+<Warning>
 **After deploying code that changes slash-command permission requirements, restart the bot.** Without a restart, members may still see stale permission visibility until the next ready-time sync.
+</Warning>
 
 ## Developer eval sandbox
 
-`/eval` and the prefix alias `?eval` (`?e`) run code in an isolated VM sandbox. Both paths are developer-only — the user's Discord ID must appear in the bot's developers allowlist (`config.moderation.developers`). If the allowlist is missing or empty, eval is denied.
+`/eval` and the prefix alias `?eval` (`?e`) run code in an isolated VM sandbox (`safeEval.js`). Both paths are developer-only — the user's Discord ID must appear in the bot's developers allowlist (`config.moderation.developers`). If the allowlist is missing or empty, eval is denied.
 
-Other developer commands (for example `/badge`) are allowlist-gated but do **not** use the eval sandbox.
+All commands under `devOnly/` are developer-only (fail-closed in `devCommandValidator.js`). Other developer commands (for example `/badge`) are allowlist-gated but do **not** use the eval sandbox.
 
 ### Sandbox rules
 
@@ -43,30 +47,32 @@ Other developer commands (for example `/badge`) are allowlist-gated but do **not
 
 Blocked identifiers are matched as whole words before execution. A match fails closed.
 
+<Tip>
 Eval is a developer convenience, not a general-purpose scripting surface. Keep the developers allowlist limited to trusted operator accounts.
+</Tip>
 
 ## Ticket close authorization
 
 A member may close a ticket only if **any** of the following is true:
 
 1. They have the **Manage Channels** guild permission.
-2. They have the guild's configured **ticket support role**.
+2. They have the guild's configured **ticket support role** (`ticketData.Role`).
 3. They are the **ticket opener** (detected via their View Channel overwrite on the ticket channel).
 
 Everyone else receives an ephemeral denial. Opening a ticket from the panel is separate — members who can see the panel can open a ticket, subject to the usual one-open-ticket-per-user rule.
 
 ## Setup wizard authorization
 
-`/setup` requires **Manage Server** at both the Discord API level and at runtime.
+`/setup` requires **Manage Server** at both the Discord API level (`default_member_permissions`) and at runtime (`userPermissions`).
 
-Follow-up setup interactions (select menus, channel/role collectors) also require Manage Server and only accept input from the user who started setup. Another guild member cannot complete or hijack someone else's in-progress setup flow.
+Follow-up setup components (welcome and ticket flows) also require Manage Server via `setupGuard.js`. Channel and role picker collectors bind to the member who triggered that step — another member cannot answer those collectors, even if they also have Manage Server.
 
 ## Defense in depth
 
 | Surface | Primary gate |
 |---------|----------------|
-| Moderation slash commands | Discord `default_member_permissions` + runtime checks |
+| Moderation slash commands | Discord `default_member_permissions` + runtime `userPermissions` |
 | `/setup` and setup components | Manage Server + initiating-user collector binding |
 | Ticket close button | Opener, support role, or Manage Channels |
 | `/eval` and `?eval` | Developer allowlist + VM sandbox |
-| Other developer commands | Developer allowlist |
+| Other `devOnly/` commands | Developer allowlist (fail-closed) |
