@@ -223,10 +223,12 @@ Do not deploy the BotStaff update with an empty ACL and expect staff-only comman
 
 **Operator cutover checklist:**
 
-1. While `moderation.staffRoles` is still in your live `config.js`, run **`/botstaff migrate`**.
-2. If you already removed `staffRoles`, add each person with **`/botstaff add`** before deploy.
-3. Run **`npx prisma db push`** to create the `botstaff` collection.
+1. Deploy the BotStaff update, but keep `moderation.staffRoles` in your live `config.js`.
+2. Run **`npx prisma db push`** to create the `botstaff` collection (required before any `/botstaff` subcommand).
+3. Run **`/botstaff migrate`** to import members from legacy roles.
 4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+
+If you already removed `staffRoles` from config, skip migrate and add each person with **`/botstaff add`** instead (after steps 1–2).
 
 The migrate subcommand reads legacy role IDs from config, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and imports members who hold any listed role.
 
