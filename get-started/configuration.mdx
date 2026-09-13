@@ -126,10 +126,12 @@ The reserved `bot-staff` badge (🛡️ Bot Staff) is synced when staff are adde
 
 **Cutover checklist** (upgrade from `staffRoles`):
 
-1. While `moderation.staffRoles` is still in your live `config.js`, run **`/botstaff migrate`** to import support-guild members who hold those roles into `BotStaff`.
-2. If you already removed `staffRoles`, add each person with **`/botstaff add <user>`** before deploy.
-3. Run **`npx prisma db push`** to create the `botstaff` collection.
+1. Deploy the BotStaff update, but keep `moderation.staffRoles` in your live `config.js`.
+2. Run **`npx prisma db push`** to create the `botstaff` collection (required before any `/botstaff` subcommand).
+3. Run **`/botstaff migrate`** to import support-guild members who hold those roles into `BotStaff`.
 4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+
+If you already removed `staffRoles` from config, skip migrate and add each person with **`/botstaff add <user>`** instead (after steps 1–2).
 
 See [Security](/security#global-bot-staff-acl) for ACL behavior and [Database](/reference/database#botstaff) for the schema.
 
