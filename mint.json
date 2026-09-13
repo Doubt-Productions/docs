@@ -42,7 +42,28 @@
   "navigation": [
     {
       "group": "Get Started",
-      "pages": ["introduction", "security"]
+      "pages": [
+        "introduction",
+        "get-started/getting-started",
+        "get-started/configuration",
+        "security"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/features",
+        "guides/commands"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "reference/architecture",
+        "reference/database",
+        "reference/engineering-guide",
+        "reference/contributing"
+      ]
     },
     {
       "group": "Legal",

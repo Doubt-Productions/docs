@@ -1,15 +1,66 @@
 ---
-title: Introduction
-description: "Official documentation for Doubt Productions products"
+title: "Introduction"
+description: "Official documentation for Doubt Discord Bot — setup, features, commands, and developer guides"
 ---
 
-## Welcome
+Doubt is an advanced multi-purpose Discord bot built with [discord.js v14](https://discord.js.org/), [Prisma](https://www.prisma.io/) (MongoDB), and [Express](https://expressjs.com/). It offers moderation, economy, tickets, welcome messages, AFK status, join-to-create voice channels, leveling, and more.
 
-Welcome to the official Doubt documentation. This site covers Doubt Discord Bot and related products.
+## Features
 
-## What's here
+- **Moderation** — kick, ban, unban, timeout, automod rules
+- **Economy System** — wallet/bank accounts, begging, deposits, withdrawals, robbery
+- **Ticket System** — configurable support tickets with HTML transcripts
+- **Welcome System** — customizable join messages and auto-roles
+- **AFK System** — automatic AFK status with mention notifications
+- **Join-to-Create** — temporary voice channels
+- **Rank/XP System** — per-guild leveling with rank cards
+- **Utility** — embeds, user info, server info, translation, avatars
+- **Developer Tools** — eval, deploy, badge management, simulated joins/leaves
 
-- **[Security](/security)** — permission gates, eval sandbox, ticket close rules, and setup authorization ([PR #130](https://github.com/Doubt-Productions/Doubt-Discord-Bot/pull/130))
-- **[Legal](/legal/welcome)** — terms and privacy
+## Tech Stack
 
-More operator and feature guides are on the way. Engineering notes also live in the [bot repository docs](https://github.com/Doubt-Productions/Doubt-Discord-Bot/tree/main/docs).
+| Component | Technology |
+|-----------|------------|
+| Runtime | Node.js (v16.11+) |
+| Bot Framework | discord.js v14 |
+| Database | MongoDB (via Prisma v6) |
+| HTTP Server | Express (health-check on port 8080) |
+| Package Manager | npm |
+
+## Documentation
+
+### Get Started
+
+New to Doubt? Start here:
+
+- [Getting Started](/get-started/getting-started) — install, configure, and run the bot locally
+- [Configuration](/get-started/configuration) — environment variables and `config.js` reference
+- [Security](/security) — permission gates, eval sandbox, ticket close rules, and setup authorization
+
+### Guides
+
+Learn how to use Doubt's features:
+
+- [Features](/guides/features) — economy, tickets, welcome, AFK, moderation, and more
+- [Commands](/guides/commands) — complete reference for slash, prefix, context menu, and developer commands
+
+### Reference
+
+For developers and operators:
+
+- [Architecture](/reference/architecture) — codebase structure, event pipeline, and handler system
+- [Database](/reference/database) — Prisma schema, models, and data layer
+- [Engineering Guide](/reference/engineering-guide) — runtime behavior, deployment, and operational notes
+- [Contributing](/reference/contributing) — developer setup, coding conventions, and testing
+
+### Legal
+
+- [Legal](/legal/welcome) — terms of service and privacy policy
+
+## Source Repository
+
+Doubt Discord Bot is open source under GPL-3.0. The full source code and in-repo engineering docs live at [github.com/Doubt-Productions/Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot).
+
+## Support
+
+Need help? Join our [Discord server](https://discord.gg/CrXyUcvqRC) or email [contact@doubtbot.eu](mailto:contact@doubtbot.eu).
