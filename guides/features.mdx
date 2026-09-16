@@ -113,9 +113,11 @@ When someone mentions an AFK user, the bot replies with an embed showing:
 - Their AFK reason
 - The notification auto-deletes after 10 seconds
 
+Mention detection uses Discord's `message.mentions` metadata — the bot does not read message text and does not require Message Content Intent.
+
 ### Returning from AFK
 
-AFK is automatically cleared when the user sends a message. Alternatively:
+AFK is automatically cleared when the user sends a message (no message content is read). Alternatively:
 
 ```text
 /afk remove

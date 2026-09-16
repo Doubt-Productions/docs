@@ -1,6 +1,6 @@
 ---
 title: "Commands Reference"
-description: "Complete reference for all slash, prefix, context menu, and developer commands"
+description: "Complete reference for all slash, context menu, and developer commands"
 ---
 
 Complete reference for all bot commands organized by type and category.
@@ -104,24 +104,6 @@ Right-click a user or message to access these commands.
 | **Profile** | User | Generate a user profile card image |
 | **Get Avatar** | User | View a user's avatar in full size |
 | **Translate Message** | Message | Translate a message to English |
-
----
-
-## Prefix Commands
-
-Prefix commands use `?` by default (configurable per-guild). They are **disabled by default** — set `handler.commands.prefix: true` in `config.js` to enable.
-
-| Command | Aliases | Description | Permissions |
-|---------|---------|-------------|-------------|
-| `?help` | `?h` | List all available commands | — |
-| `?ping` | `?p` | Check bot latency | Administrator |
-| `?prefix set <new>` | — | Change the guild's command prefix | Administrator |
-| `?prefix reset` | — | Reset prefix to default | Administrator |
-| `?eval <code>` | `?e` | Evaluate JavaScript code | Developer only |
-
-<Warning>
-`?eval` runs code in an isolated VM sandbox and is restricted to the developer allowlist. See [Security](/security#developer-eval-sandbox).
-</Warning>
 
 ---
 

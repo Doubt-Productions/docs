@@ -33,7 +33,7 @@ Command registration runs when the bot becomes ready and syncs `default_member_p
 
 ## Developer eval sandbox
 
-`/eval` and the prefix alias `?eval` (`?e`) run code in an isolated VM sandbox (`safeEval.js`). Both paths are developer-only — the user's Discord ID must appear in the bot's developers allowlist (`config.moderation.developers`). If the allowlist is missing or empty, eval is denied.
+`/eval` runs code in an isolated VM sandbox (`safeEval.js`). It is developer-only — the user's Discord ID must appear in the bot's developers allowlist (`config.moderation.developers`). If the allowlist is missing or empty, eval is denied.
 
 All commands under `devOnly/` are developer-only (fail-closed in `devCommandValidator.js`). Other developer commands (for example `/badge`) are allowlist-gated but do **not** use the eval sandbox.
 
@@ -102,7 +102,7 @@ After adding or removing staff, use `/botstaff list` to verify the ACL before re
 | Moderation slash commands | Discord `default_member_permissions` + runtime `userPermissions` |
 | `/setup` and setup components | Manage Server + initiating-user collector binding |
 | Ticket close button | Opener, support role, or Manage Channels |
-| `/eval` and `?eval` | Developer allowlist + VM sandbox |
+| `/eval` | Developer allowlist + VM sandbox |
 | Other `devOnly/` commands | Developer allowlist (fail-closed) |
 | `staffOnly` dev commands | Developer allowlist **or** `BotStaff` Mongo ACL (fail-closed) |
 | Reserved `bot-staff` badge | Locked in `/badge`; managed only via `/botstaff` |
