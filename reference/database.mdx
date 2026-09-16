@@ -129,6 +129,10 @@ AFK status entries — one per user per guild.
 
 **Used by:** `/afk set/remove`, AFK check event handler
 
+<Note>
+AFK uses `messageCreate` for clearing status and mention notifications via `message.mentions`. It does not read `message.content` and does not require Message Content Intent.
+</Note>
+
 ---
 
 ### Xp
@@ -188,22 +192,6 @@ Ticket system configuration — one per guild.
 
 ---
 
-### GuildSchema
-
-Per-guild settings (currently prefix only).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `guild` | String? | Discord guild ID |
-| `prefix` | String? | Custom command prefix |
-
-**Collection:** `guildschemas`
-
-**Used by:** Prefix command routing, `?prefix set/reset`
-
----
-
 ### Chatbot
 
 Chatbot channel configuration — one per guild.
@@ -258,3 +246,7 @@ module.exports = prisma.ecoSchema;
 ```
 
 This preserves backward-compatible import paths throughout the codebase while using Prisma under the hood.
+
+<Note>
+Legacy `guildschemas` documents may still exist in MongoDB from older prefix-command builds. They are inert after the `GuildSchema` model was removed and can be ignored or cleaned up manually.
+</Note>
