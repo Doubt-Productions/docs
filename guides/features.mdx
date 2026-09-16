@@ -98,7 +98,7 @@ Let others know when you're away from the keyboard.
 
 ### Setting AFK
 
-```
+```text
 /afk set [message]
 ```
 
@@ -117,7 +117,7 @@ When someone mentions an AFK user, the bot replies with an embed showing:
 
 AFK is automatically cleared when the user sends a message. Alternatively:
 
-```
+```text
 /afk remove
 ```
 
@@ -223,9 +223,9 @@ Do not deploy the BotStaff update with an empty ACL and expect staff-only comman
 
 **Operator cutover checklist:**
 
-1. While `moderation.staffRoles` is still in your live `config.js`, run **`/botstaff migrate`**.
-2. If you already removed `staffRoles`, add each person with **`/botstaff add`** before deploy.
-3. Run **`npx prisma db push`** to create the `botstaff` collection.
+1. Deploy the BotStaff update while keeping `moderation.staffRoles` in your live `config.js` (do not remove it yet).
+2. Run **`npx prisma db push`** so the `botstaff` collection exists — `/botstaff migrate` writes via Prisma and will fail if the collection is missing.
+3. While `staffRoles` is still present, run **`/botstaff migrate`**. If you already removed `staffRoles`, add each person with **`/botstaff add`** instead.
 4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
 
 The migrate subcommand reads legacy role IDs from config, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and imports members who hold any listed role.
