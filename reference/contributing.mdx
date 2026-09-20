@@ -1,255 +1,124 @@
 ---
 title: "Contributing"
-description: "Developer setup, coding conventions, and testing for Doubt Discord Bot"
+description: "Developer setup, discordx conventions, Biome, and testing for doubt-bot"
 ---
 
-Guide for developers contributing to the Doubt Discord Bot.
+Contributors work in the private **[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** repository. Public documentation changes belong in **[Doubt-Productions/docs](https://github.com/Doubt-Productions/docs)** (this Mintlify site).
 
-## Development Setup
+## Development setup
 
-See [Getting Started](/get-started/getting-started) for full setup instructions. Quick start:
+See [Getting Started](/get-started/getting-started). Quick path:
 
 ```bash
-git clone https://github.com/Doubt-Productions/Doubt-Discord-Bot.git
-cd Doubt-Discord-Bot
-npm install
-cp .env.example .env        # Fill in credentials
-cp src/example.config.js src/config.js  # Fill in IDs
-npm run dev                  # Start with nodemon
+git clone git@github.com:Doubt-Productions/doubt-bot.git
+cd doubt-bot
+yarn setup
+cp .env.example .env   # fill Discord + DATABASE_URL + DEVELOPER_DISCORD_IDS
+yarn dev
 ```
 
-## Project Scripts
+## Scripts
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `npm start` | `node .` | Start the bot |
-| `npm run dev` | `nodemon .` | Start with auto-restart on file changes |
-| `npm test` | `node --test tests/*.test.js` | Run the test suite |
+| Script | Description |
+|--------|-------------|
+| `yarn dev` | Run bot with tsx (`src/dev.ts`) |
+| `yarn watch` | Nodemon + dev |
+| `yarn build` | `tsc` → `build/` |
+| `yarn start` | `node build/main.js` |
+| `yarn setup` | Install, generate, `migrate dev` |
+| `yarn setup:prod` | Prod install, generate, `migrate deploy` |
+| `yarn lint` / `yarn lint:fix` | Biome check / fix |
+| `yarn format:fix` | Biome format |
+| `yarn test` | `node --test tests/**/*.test.cjs` |
+| `yarn migrate:mongo` | Legacy Mongo → Postgres import |
 
-## Code Structure
+## Adding a slash command
 
-### Adding a Slash Command
+Create a class under `src/commands/categories/<category>/`:
 
-Create a new file in `src/commands/slash/<Category>/`:
+```ts
+import { Discord, Guard, Slash } from 'discordx';
+import { Category } from '@discordx/utilities';
+import { GuildOnly } from '../../../utils/guildGuards.js';
 
-```js
-const { SlashCommandBuilder } = require("discord.js");
-
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("mycommand")
-    .setDescription("Description of my command")
-    .toJSON(),
-  run: async (client, interaction) => {
-    await interaction.reply("Hello!");
-  },
-};
+@Discord()
+@Category('Utility')
+export class ExampleCommand {
+  @Slash({ description: 'Example', name: 'example' })
+  @Guard(GuildOnly)
+  async example(interaction: CommandInteraction): Promise<void> {
+    await interaction.reply({ content: 'Hello!', ephemeral: true });
+  }
+}
 ```
 
-The command is automatically loaded at startup and registered on `DEV_GUILD_ID`.
+Ensure the file is picked up by `importx` (under `src/commands/`). Assign `@Category()` so `/help` lists the command.
 
-### Adding a Developer Command
+### Guards
 
-Create a new file in `src/commands/devOnly/Developers/`:
+- `@Guard(DeveloperOnly)` — `/botstaff`
+- `@Guard(StaffOnly)` — `/badge` administration
+- `@Guard(GuildOnly, ManageGuildOnly)` — `/setup`
 
-```js
-const { SlashCommandBuilder } = require("discord.js");
+## Adding components
 
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("mydevcommand")
-    .setDescription("Developer-only command"),
-  options: {
-    developers: true,
-  },
-  run: async (client, interaction) => {
-    await interaction.reply({ content: "Dev only!", ephemeral: true });
-  },
-};
+Use discordx component decorators in `src/components/`:
+
+```ts
+@ButtonComponent({ id: 'my-button' })
+async handle(interaction: ButtonInteraction): Promise<void> { … }
+
+@ModalComponent({ id: 'my-modal' })
+async submit(interaction: ModalSubmitInteraction): Promise<void> { … }
 ```
 
-### Adding a Component Handler
+Call `denyUnlessManageGuild()` for setup flows when appropriate.
 
-#### Button
+## Database changes
 
-Create in `src/components/buttons/`:
+1. Edit `prisma/schema.prisma`
+2. `yarn prisma:migrate:dev --name describe_change`
+3. `yarn prisma:generate`
+4. Use `prisma` from `src/utils/prisma.ts` in services — keep command handlers thin
 
-```js
-module.exports = {
-  customId: "my-button",
-  run: async (client, interaction) => {
-    await interaction.reply({ content: "Button clicked!", ephemeral: true });
-  },
-};
-```
-
-#### Select Menu
-
-Create in `src/components/selects/`:
-
-```js
-module.exports = {
-  customId: "my-select",
-  run: async (client, interaction) => {
-    const selected = interaction.values[0];
-    await interaction.reply({ content: `Selected: ${selected}`, ephemeral: true });
-  },
-};
-```
-
-#### Modal
-
-Create in `src/components/modals/`:
-
-```js
-module.exports = {
-  customId: "my-modal",
-  run: async (client, interaction) => {
-    const field = interaction.fields.getTextInputValue("my-field");
-    await interaction.reply({ content: `You said: ${field}`, ephemeral: true });
-  },
-};
-```
-
-### Adding a Context Menu
-
-Create in `src/contextmenus/`:
-
-```js
-const { ContextMenuCommandBuilder, ApplicationCommandType } = require("discord.js");
-
-module.exports = {
-  data: new ContextMenuCommandBuilder()
-    .setName("My Menu")
-    .setType(ApplicationCommandType.User),
-  run: async (client, interaction) => {
-    const target = interaction.targetUser;
-    await interaction.reply({ content: `Target: ${target.username}`, ephemeral: true });
-  },
-};
-```
-
-### Adding a Database Model
-
-1. Add the model to `prisma/schema.prisma`
-2. Run `npx prisma generate` to regenerate the client
-3. Create a schema re-export in `src/schemas/`:
-
-```js
-const { prisma } = require("../handlers/prisma");
-module.exports = prisma.myModel;
-```
-
-4. Import and use in your command:
-
-```js
-const myModel = require("../../../schemas/myModel");
-const data = await myModel.findFirst({ where: { guildId: guild.id } });
-```
+Follow Prisma conventions: relations on both sides, `@updatedAt`, indexes on queried fields.
 
 ## Testing
 
-### Running Tests
-
 ```bash
-npm test
+yarn test
 ```
 
-Tests use Node.js built-in test runner (`node:test`) and do not require MongoDB, Discord, or any external service.
+Tests are Node's built-in runner (`.test.cjs`). They should not require live Discord or Postgres unless explicitly integration-scoped.
 
-### Writing Tests
+Existing regression coverage includes:
 
-Create test files in `tests/` with the `.test.js` extension:
+| Test | Focus |
+|------|--------|
+| `no-message-content-intent.test.cjs` | Intent list excludes Message Content |
+| `staff-acl-not-badge.test.cjs` | Badge ≠ staff privilege |
+| `badge-reserved-lookalike.test.cjs` | Reserved badge key blocking |
+| `boot-command-deploy.test.cjs` | Normal boot does not clear guild commands |
 
-```js
-const { test } = require("node:test");
-const assert = require("node:assert");
+Add focused tests when changing ACL, badge rules, or intent configuration.
 
-test("my feature works correctly", () => {
-  const result = myFunction(input);
-  assert.strictEqual(result, expected);
-});
-```
+## Code style
 
-### Test Philosophy
+- **Biome** replaces ESLint/Prettier — run `yarn lint:fix` before PRs
+- **ESM** — use `.js` extensions in TypeScript import paths where required
+- **Services** — prefer `src/services/*` for Prisma and business rules
+- **Errors** — use `responseEmbed` / `ResponseType` helpers for consistent replies
 
-- Tests should be pure unit tests that can run without external services
-- Focus on business logic, not Discord API interactions
-- Test edge cases for economy calculations, permission checks, and data validation
-- Use `node --check` for syntax verification of command files
+## Pull requests (doubt-bot)
 
-### Existing Test Coverage
+1. `yarn test` and `yarn lint` (and `yarn build` for non-trivial changes)
+2. Include migration files when schema changes
+3. Update [Doubt-Productions/docs](https://github.com/Doubt-Productions/docs) when user-facing behavior or env vars change — not Doubt-Discord-Bot/docs
 
-| Test File | What It Tests |
-|-----------|---------------|
-| `dev-command-gate.test.js` | Developer command `options.developers` flag detection |
-| `developer-gate.test.js` | Developer ID allowlist validation |
-| `economy-amount-all.test.js` | Case-insensitive `all` keyword for deposit/withdraw |
-| `economy-account-delete.test.js` | Account deletion uses correct deleteMany filter |
-| `rob-syntax.test.js` | `/rob` source file is valid JavaScript |
-| `rob-module-loads.test.js` | `/rob` file parses without errors |
-| `rob-cooldown-race.test.js` | Cooldown lock prevents concurrent rob races |
-| `rob-caught-penalty.test.js` | Failed robbery penalty is capped at wallet |
-| `rob-failure-penalty.test.js` | Failed rob transfer amount is capped |
-| `rob-fine-cap.test.js` | Fine cannot exceed robber's wallet |
+## Pull requests (docs repo)
 
-## Code Conventions
+Edit MDX in this repository; keep operator docs aligned with doubt-bot `main`. Mention legacy-only behavior explicitly until cutover completes.
 
-### Command Handler Signature
+## License
 
-All slash and developer commands use:
-
-```js
-run: async (client, interaction) => { ... }
-```
-
-### Database Access
-
-Always use the Prisma model delegates via schema re-exports:
-
-```js
-const ecoSchema = require("../../../schemas/EcoSchema");
-
-// Find
-const data = await ecoSchema.findFirst({ where: { User: userId, Guild: guildId } });
-
-// Create
-const newData = await ecoSchema.create({ data: { User: userId, Guild: guildId, Wallet: 0, Bank: 1000 } });
-
-// Update
-await ecoSchema.update({ where: { id: data.id }, data: { Wallet: newValue } });
-
-// Delete
-await ecoSchema.delete({ where: { id: data.id } });
-
-// Delete many
-await ecoSchema.deleteMany({ where: { User: userId, Guild: guildId } });
-```
-
-### Error Handling
-
-- Use `try/catch` around database operations and Discord API calls
-- Log errors with `log(error, "err")` from `src/functions`
-- For interaction handlers, always ensure a reply is sent (even on error)
-- Use `ephemeral: true` for error messages
-
-### Logging
-
-Use the `log` function from `src/functions`:
-
-```js
-const { log } = require("../functions");
-
-log("Something happened", "info");   // Blue [INFO]
-log("Warning message", "warn");      // Yellow [WARNING]
-log("Success!", "done");             // Green [SUCCESS]
-log("Error occurred", "err");        // Red [ERROR]
-```
-
-## Pull Request Guidelines
-
-1. Run `npm test` before opening a PR — all tests must pass
-2. Run `node --check` on any modified command files to verify syntax
-3. Add regression tests for bug fixes when practical
-4. Keep commits focused and descriptive
-5. Update documentation if adding new features or changing behavior
+doubt-bot is **MIT** (private repo). Legacy Doubt-Discord-Bot remains **GPL-3.0**. Documentation in this repo follows the docs project license.

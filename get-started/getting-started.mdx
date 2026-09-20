@@ -1,152 +1,154 @@
 ---
 title: "Getting Started"
-description: "Install, configure, and run Doubt Discord Bot for local development"
+description: "Install, configure, and run the Doubt TypeScript bot (doubt-bot) for local development"
 ---
 
-This guide walks you through setting up Doubt for local development.
+This guide sets up **[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** locally. The legacy [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) repo is not required unless you are running the Mongo→Postgres migrator against production Mongo data.
 
 ## Prerequisites
 
-- **Node.js** v16.11 or higher (v18+ LTS recommended)
-- **npm** (included with Node.js)
-- **MongoDB** — either a local instance, Docker container, or [MongoDB Atlas](https://www.mongodb.com/atlas) cluster
-- **Discord Application** — create one at the [Discord Developer Portal](https://discord.com/developers/applications)
+- **Node.js** 18 or newer
+- **Yarn** 1.x (declared in `package.json`; Corepack works)
+- **PostgreSQL** 14+ — local install, Docker, or a managed instance
+- **Discord application** — [Discord Developer Portal](https://discord.com/developers/applications)
+- **Access** to the private `doubt-bot` repository (contact Doubt Productions if you need an invite)
 
-## Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/Doubt-Productions/Doubt-Discord-Bot.git
-cd Doubt-Discord-Bot
-```
-
-## Step 2: Install Dependencies
+## Step 1: Clone and install
 
 ```bash
-npm install
-```
-
-This installs all runtime dependencies and the Prisma CLI (dev dependency). The Prisma client is auto-generated during install via the `postinstall` hook.
-
-If you need to regenerate the Prisma client manually:
-
-```bash
-npx prisma generate
-```
-
-## Step 3: Configure Environment Variables
-
-Copy the environment template:
-
-```bash
+git clone git@github.com:Doubt-Productions/doubt-bot.git
+cd doubt-bot
 cp .env.example .env
+yarn setup
 ```
 
-Fill in the required values. See [Configuration](/get-started/configuration) for details on each variable.
+`yarn setup` installs dependencies, runs `prisma generate`, and applies migrations with `prisma migrate dev` (development).
 
-At minimum for development, you need:
+For production-style installs:
+
+```bash
+yarn setup:prod
+```
+
+That runs `yarn --omit=dev`, `prisma generate`, and `prisma migrate deploy`.
+
+## Step 2: Configure environment
+
+Edit `.env`. Minimum values:
 
 ```env
-PRODUCTION=false
-DEV_TOKEN=your_discord_bot_token
-DEV_CLIENT_ID=your_discord_app_id
-DEV_GUILD_ID=your_test_server_id
-DEV_MONGODB_URI=mongodb://localhost:27017/doubt-dev
-DATABASE_URL=mongodb://localhost:27017/doubt-dev
+DISCORD_TOKEN=your_bot_token
+DISCORD_CLIENT_ID=your_application_id
+DISCORD_GUILD_ID=your_test_guild_id
+DEVELOPER_DISCORD_IDS=your_discord_user_id
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/doubt_bot
+NODE_ENV=development
 ```
+
+See [Configuration](/get-started/configuration) for every variable.
 
 <Warning>
-Never commit `.env` or `src/config.js` to version control. Both files are gitignored and contain secrets.
+Never commit `.env`. It contains secrets.
 </Warning>
 
-## Step 4: Configure the Bot
+## Step 3: PostgreSQL
 
-Copy the configuration template:
+### Option A: Docker Compose (bundled in doubt-bot)
 
-```bash
-cp src/example.config.js src/config.js
-```
-
-Edit `src/config.js` to set:
-
-- **`moderation.developers`** — array of Discord user IDs who can use developer commands
-- **Global bot staff** — managed with `/botstaff` (Mongo `BotStaff` collection); staff-only commands use that ACL
-- **`variables.channels.logs`** — channel ID for logging (optional)
-- **`variables.channels.botGuilds`** / **`botUsers`** — channel IDs for stat displays (optional, but the bot will error every 30 minutes if not configured)
-
-## Step 5: Set Up the Discord Application
-
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
-2. Create a new application (or use an existing one)
-3. Navigate to **Bot** → copy the bot token → paste as `DEV_TOKEN` in `.env`
-4. Copy the Application ID → paste as `DEV_CLIENT_ID`
-5. Enable these **Privileged Gateway Intents**:
-   - Presence Intent
-   - Server Members Intent
-   - **Do not** enable Message Content Intent — the bot is slash-command only and does not read guild message content.
-6. Navigate to **OAuth2** → **URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions: Administrator (or the specific permissions you need)
-7. Use the generated URL to invite the bot to your test server
-8. Copy your test server ID → paste as `DEV_GUILD_ID`
-
-## Step 6: Set Up MongoDB
-
-### Option A: Docker (recommended for development)
+From the bot repository root:
 
 ```bash
-docker run -d --name mongodb -p 27017:27017 mongo:7
+docker compose up -d db
 ```
 
-Set `DEV_MONGODB_URI=mongodb://localhost:27017/doubt-dev` in your `.env`.
+The sample `docker-compose.yml` starts PostgreSQL 16 and exposes it to the `app` service. Point `DATABASE_URL` at your host or use the compose network URL when running the `app` service.
 
-### Option B: MongoDB Atlas
+### Option B: Local or managed Postgres
 
-1. Create a free cluster at [MongoDB Atlas](https://www.mongodb.com/atlas)
-2. Create a database user and get the connection string
-3. Set `DEV_MONGODB_URI` to the Atlas connection string
+Create a database (for example `doubt_bot`) and set `DATABASE_URL`:
 
-## Step 7: Run the Bot
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/doubt_bot
+```
 
-### Development mode (with auto-restart):
+Apply schema:
 
 ```bash
-npm run dev
+yarn prisma:generate
+yarn prisma:migrate:dev    # development
+# or
+yarn prisma:migrate:deploy # staging/production
 ```
 
-### Production mode:
+<Note>
+Production and staging should use **`prisma migrate deploy`**, not `db push`. See the [Engineering Guide](/reference/engineering-guide#prisma-migrations).
+</Note>
+
+## Step 4: Discord application
+
+1. Create or open an application in the [Developer Portal](https://discord.com/developers/applications).
+2. **Bot** → reset/copy token → `DISCORD_TOKEN`.
+3. Copy **Application ID** → `DISCORD_CLIENT_ID`.
+4. Enable **Privileged Gateway Intents** as needed:
+   - **Server Members Intent** — welcome auto-roles, member-dependent features
+   - **Presence Intent** — only if you add presence-dependent features later
+   - **Do not** enable **Message Content Intent** — the bot is slash-first and AFK uses mentions/metadata only.
+5. **OAuth2 → URL Generator** — scopes `bot`, `applications.commands`; invite to your test guild.
+6. Copy the guild ID → `DISCORD_GUILD_ID` (used for guild-scoped command registration in development).
+
+## Step 5: Run the bot
+
+Development (tsx + watch via `yarn dev` / `yarn watch`):
 
 ```bash
-npm start
+yarn dev
 ```
 
-You should see:
-- Command loading tables (slash, dev-only)
-- Event registration table
-- Component loading table
-- `[SUCCESS] Prisma connected to MongoDB!`
-- `Logged in on discord as: YourBot#1234`
-- `Running on http://0.0.0.0:8080`
+Production build:
 
-## Step 8: Verify
+```bash
+yarn build
+yarn start
+```
 
-1. Check the health endpoint: `curl http://localhost:8080/`
-2. In your Discord test server, try `/ping` or `/test`
-3. Run the test suite: `npm test`
+On success you should see discordx command import logs and `Logged in as …` from `src/events/ready.ts`.
 
-## Common Issues
+## Step 6: Verify
 
-### Bot doesn't respond to slash commands
+1. In Discord, run `/ping` and `/help`.
+2. Run tests (no live Discord or Postgres required for most regression tests):
 
-- Verify `DEV_GUILD_ID` matches your test server ID
-- Check that the bot has the `applications.commands` scope
-- Wait a few seconds after startup for command registration
+```bash
+yarn test
+```
 
-### MongoDB connection fails
+3. Optional: `yarn lint` (Biome).
 
-- Ensure MongoDB is running and accessible at the URI you configured
-- For Atlas: check that your IP is whitelisted in Network Access
-- Verify the connection string format includes the database name
+## Migrating from the legacy JS bot
 
-### Channel editing errors every 30 minutes
+If you are cut over from [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) MongoDB:
 
-The bot tries to rename `botGuilds` and `botUsers` channels periodically. If these channel IDs are empty or invalid in `config.js`, the bot will log errors. Either set valid channel IDs or ignore these non-fatal errors.
+1. Apply Postgres migrations first: `yarn prisma:migrate:deploy`.
+2. Set `MONGO_SOURCE_URL` (or `SOURCE_DATABASE_URL`) to the **read-only** legacy Mongo URI.
+3. Dry run: `yarn migrate:mongo:dry-run`
+4. Apply: `yarn migrate:mongo`
+
+Details: [Engineering Guide — Mongo→Postgres migration](/reference/engineering-guide#mongopostgres-data-migration).
+
+## Common issues
+
+### Slash commands missing
+
+- Confirm the bot is in the guild and has `applications.commands` scope.
+- After code changes, restart the bot so `bot.initApplicationCommands()` runs on ready.
+- Do not set `CLEAR_GUILD_COMMANDS_ON_BOOT=true` unless you intentionally wipe guild commands once.
+
+### Database connection errors
+
+- Check `DATABASE_URL` reaches Postgres (host, port, database name, credentials).
+- Run `yarn prisma:migrate:status` to confirm migrations applied.
+
+### BotStaff / staff commands deny everyone
+
+- Populate `BotStaff` via `/botstaff add` or the Mongo migrator before expecting staff-only gates to pass.
+- Apply migrations **before** staff rows or `/botstaff` writes. See [Security — BotStaff cutover](/security#global-bot-staff-acl).
