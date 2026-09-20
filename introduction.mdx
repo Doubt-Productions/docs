@@ -3,66 +3,70 @@ title: "Introduction"
 description: "Official documentation for Doubt Discord Bot — setup, features, commands, and developer guides"
 ---
 
-Doubt is an advanced multi-purpose Discord bot built with [discord.js v14](https://discord.js.org/), [Prisma](https://www.prisma.io/) (MongoDB), and [Express](https://expressjs.com/). It offers moderation, economy, tickets, welcome messages, AFK status, join-to-create voice channels, leveling, and more.
+Doubt is a multi-purpose Discord bot for moderation, economy, tickets, welcome flows, AFK, join-to-create voice, and leveling. The **active rewrite** lives in the private repository [Doubt-Productions/doubt-bot](https://github.com/Doubt-Productions/doubt-bot): TypeScript, [discordx](https://discordx.js.org/), [discord.js v14](https://discord.js.org/), [Prisma](https://www.prisma.io/) on **PostgreSQL**, [Biome](https://biomejs.dev/), ESM, Docker, and Yarn.
 
-Commands are **slash-based** (plus context menus and components). The bot does not use Discord's Message Content Intent and does not support legacy prefix commands (`?help`, etc.).
+The legacy JavaScript bot ([Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot)) remains in production until cutover. These docs describe the **TypeScript stack as the current target**; where a feature is not ported yet, guides call that out.
+
+Commands are **slash-only** (plus buttons, select menus, and modals). The bot does **not** use Discord's Message Content Intent and does **not** support prefix commands.
 
 ## Features
 
-- **Moderation** — kick, ban, unban, timeout, automod rules
-- **Economy System** — wallet/bank accounts, begging, deposits, withdrawals, robbery
-- **Ticket System** — configurable support tickets with HTML transcripts
-- **Welcome System** — customizable join messages and auto-roles
-- **AFK System** — automatic AFK status with mention notifications
-- **Join-to-Create** — temporary voice channels
-- **Rank/XP System** — per-guild leveling with rank cards
-- **Utility** — embeds, user info, server info, translation, avatars
-- **Developer Tools** — eval, deploy, badge management, global bot staff (`/botstaff`), simulated joins/leaves
+- **Moderation** — kick, ban, timeout, automod *(legacy bot today; port in progress on doubt-bot)*
+- **Economy** — wallet/bank accounts, begging, deposits, withdrawals, robbery
+- **Tickets** — configurable panels, modal-based opening, staff roles, close authorization
+- **Welcome** — per-guild join messages, auto-roles, welcome message via **modal** (not message collectors)
+- **AFK** — nickname prefix and mention notifications without reading message content
+- **Join-to-Create** — temporary voice channels from a hub channel
+- **Rank / XP** — per-guild XP, leaderboard, rank embeds
+- **Badges & BotStaff** — Postgres-backed badges; global staff ACL with display-only `bot-staff` badge
+- **Administration** — `/botstaff` (developer-gated), `/badge` (bot staff or developers)
 
-## Tech Stack
+## Tech stack (doubt-bot)
 
 | Component | Technology |
 |-----------|------------|
-| Runtime | Node.js (v16.11+) |
-| Bot Framework | discord.js v14 |
-| Database | MongoDB (via Prisma v6) |
-| HTTP Server | Express (health-check on port 8080) |
-| Package Manager | npm |
+| Runtime | Node.js 18+ |
+| Language | TypeScript (ESM) |
+| Bot framework | discordx + discord.js v14 |
+| Database | PostgreSQL via Prisma 6 |
+| Lint / format | Biome |
+| Package manager | Yarn |
+| Container | Docker (`Dockerfile`, optional `docker-compose.yml`) |
+
+Public operator documentation is hosted at [doubtbot.eu/docs](https://doubtbot.eu/docs). Source for **these pages only**: [Doubt-Productions/docs](https://github.com/Doubt-Productions/docs).
 
 ## Documentation
 
 ### Get Started
 
-New to Doubt? Start here:
-
-- [Getting Started](/get-started/getting-started) — install, configure, and run the bot locally
-- [Configuration](/get-started/configuration) — environment variables and `config.js` reference
-- [Security](/security) — permission gates, bot staff ACL, eval sandbox, ticket close rules, and setup authorization
+- [Getting Started](/get-started/getting-started) — clone doubt-bot, PostgreSQL, Yarn setup, run locally
+- [Configuration](/get-started/configuration) — `.env` reference (`DATABASE_URL`, Discord tokens, developers)
+- [Security](/security) — permission gates, BotStaff ACL, setup guards, ticket close, eval sandbox notes
 
 ### Guides
 
-Learn how to use Doubt's features:
-
-- [Features](/guides/features) — economy, tickets, welcome, AFK, moderation, and more
-- [Commands](/guides/commands) — complete reference for slash, context menu, and developer commands
+- [Features](/guides/features) — economy, tickets, welcome, AFK, JTC, rank, badges, BotStaff
+- [Commands](/guides/commands) — slash commands on doubt-bot; legacy-only commands until cutover
 
 ### Reference
 
-For developers and operators:
-
-- [Architecture](/reference/architecture) — codebase structure, event pipeline, and handler system
-- [Database](/reference/database) — Prisma schema, models, and data layer
-- [Engineering Guide](/reference/engineering-guide) — runtime behavior, deployment, and operational notes
-- [Contributing](/reference/contributing) — developer setup, coding conventions, and testing
+- [Architecture](/reference/architecture) — discordx layout, guards, events, components
+- [Database](/reference/database) — Prisma models on PostgreSQL
+- [Engineering Guide](/reference/engineering-guide) — migrations, Docker, Mongo→Postgres cutover
+- [Contributing](/reference/contributing) — Biome, tests, adding discordx commands
 
 ### Legal
 
 - [Legal](/legal/welcome) — terms of service and privacy policy
 
-## Source Repository
+## Repositories
 
-Doubt Discord Bot is open source under GPL-3.0. The full source code and in-repo engineering docs live at [github.com/Doubt-Productions/Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot).
+| Repository | Role |
+|------------|------|
+| [doubt-bot](https://github.com/Doubt-Productions/doubt-bot) | **Active TypeScript rewrite** (private; request access from Doubt Productions) |
+| [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) | Legacy JS bot (GPL-3.0); frozen for new features; Mongo source for one-time data migration |
+| [docs](https://github.com/Doubt-Productions/docs) | Mintlify public documentation (this site) |
 
 ## Support
 
-Need help? Join our [Discord server](https://discord.gg/CrXyUcvqRC) or email [contact@doubtbot.eu](mailto:contact@doubtbot.eu).
+Join the [Discord server](https://discord.gg/CrXyUcvqRC) or email [contact@doubtbot.eu](mailto:contact@doubtbot.eu).

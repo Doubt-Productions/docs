@@ -1,274 +1,150 @@
 ---
 title: "Engineering Guide"
-description: "Runtime behavior, deployment, configuration pitfalls, and operational notes for Doubt Discord Bot"
+description: "Runtime behavior, Prisma migrations, Docker, and Mongo→Postgres cutover for doubt-bot"
 ---
 
-This guide documents the behavior verified from source in the [Doubt Discord Bot repository](https://github.com/Doubt-Productions/Doubt-Discord-Bot). Keep it updated when command loading, deployment, configuration, or economy behavior changes.
+Operator and contributor notes for **[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** on `main`. Public docs live in [Doubt-Productions/docs](https://github.com/Doubt-Productions/docs) (this site). Do not dual-write engineering markdown into [Doubt-Discord-Bot/docs](https://github.com/Doubt-Productions/Doubt-Discord-Bot/tree/main/docs) — that tree tracks the legacy bot until archive.
 
-<Note>
-Engineering docs also live in the bot repository at [`docs/`](https://github.com/Doubt-Productions/Doubt-Discord-Bot/tree/main/docs) for contributors working directly in that repo.
-</Note>
+## Repositories and cutover
 
-## Startup And Configuration
+| Repo | Status |
+|------|--------|
+| **doubt-bot** (private) | Active TypeScript rewrite — target stack |
+| **Doubt-Discord-Bot** | Legacy JS + Mongo — production until cutover; Mongo source for migrator |
+| **docs** | Mintlify site at [doubtbot.eu/docs](https://doubtbot.eu/docs) |
 
-The bot starts in `src/index.js`. It creates an `ExtendedClient`, calls `client.start()`, and then starts the Express sidecar with `server()`. `client.start()` is async but is not awaited by `src/index.js`, so Discord login, command deployment, optional Prisma/MongoDB connection, optional Top.gg autoposting, and the HTTP listener can initialize concurrently.
+Feature parity is incremental (economy, AFK, rank, welcome, tickets, JTC, badges, BotStaff on Postgres; moderation/dev utilities still legacy).
 
-Required local setup:
+## Local setup summary
 
-1. Run `npm i`.
-2. Copy `.env.example` to `.env`.
-3. Copy `src/example.config.js` to `src/config.js`.
-4. Fill in Discord application IDs/tokens, MongoDB URIs, guild IDs, stat channel IDs, and developer user IDs.
-5. Set `DATABASE_URL` for Prisma CLI commands. The runtime client reads the MongoDB URI from `src/config.js`, so keep `DATABASE_URL` aligned with the selected runtime URI when generating or pushing schema metadata.
-6. Run `npx prisma generate` after installing dependencies or changing `prisma/schema.prisma`.
-7. Run `npm run dev` for nodemon or `npm start` for node.
-8. Run `npm test` before opening a PR.
-
-See [Getting Started](/get-started/getting-started) for step-by-step setup instructions.
-
-Environment variables used by the code:
-
-- `CLIENT_TOKEN` and `CLIENT_ID`: production Discord bot token and application ID.
-- `DEV_TOKEN` and `DEV_CLIENT_ID`: development Discord bot token and application ID.
-- `MONGODB_URI` and `DEV_MONGODB_URI`: MongoDB connection strings.
-- `DATABASE_URL`: MongoDB connection string used by Prisma CLI commands such as `prisma generate` and `prisma db push`.
-- `GUILD_ID`: support or production guild ID.
-- `DEV_GUILD_ID`: guild used by ready-time slash/context-menu registration.
-- `TOPGG_TOKEN`: optional; enables Top.gg autoposting in `src/functions/index.js`.
-
-Configuration constraints:
-
-- `src/example.config.js` is the runtime schema for `src/config.js`.
-- The bot is slash-command only. `ExtendedClient` does **not** request `GatewayIntentBits.MessageContent`. Keep Message Content Intent disabled in the Discord Developer Portal.
-- AFK uses `messageCreate` for clearing the author's AFK status and for mention-based notifications via `message.mentions`; it does not read `message.content`.
-- `handler.mongodb.toggle` controls whether `ExtendedClient.start()` calls `connectPrisma()` from `src/handlers/prisma.js`.
-- Prisma runtime queries use `config.handler.mongodb.uri`. `DATABASE_URL` is only read by Prisma CLI tools.
-- `config.variables.dbName` still exists for configuration compatibility, but the verified Prisma startup path does not read it; include the database name in the MongoDB URI instead.
-- The Express sidecar in `src/server.js` listens on `0.0.0.0:8080` and returns `Bot is online! Join our discord here: https://discord.gg/rmqAhQz2qu` at `/`.
-- `ExtendedClient` updates `config.variables.channels.botGuilds` and `config.variables.channels.botUsers` every 30 minutes. Those IDs must point to editable channels in `config.handler.guildId`.
-- `PRODUCTION` deserves extra care: environment variables are strings. Token, client ID, and guild ID selection compare against `"true"`, but MongoDB URI selection uses `process.env.PRODUCTION` truthiness. With `PRODUCTION=false` as a string, `config.handler.mongodb.uri` still selects `MONGODB_URI`. Verify the generated `src/config.js` values before running a bot.
-
-## Prisma Persistence
-
-Persistence now runs through Prisma v6 with the MongoDB provider:
-
-- `prisma/schema.prisma` defines the generated client models and maps them to existing MongoDB collections with `@@map`, such as `ecoschemas`, `users`, `badges`, `botstaff`, `afks`, `xps`, `welcomes`, `tickets`, `chatbots`, and `jtcsetups`.
-- `src/handlers/prisma.js` exports a singleton `prisma` client and `connectPrisma()`. The client is constructed with `datasourceUrl: config.handler.mongodb.uri`.
-- Files in `src/schemas/**` are compatibility modules that export Prisma delegates, for example `src/schemas/EcoSchema.js` exports `prisma.ecoSchema`.
-- The legacy `src/handlers/mongoose.js` file remains in the tree, but `ExtendedClient` imports `src/handlers/prisma.js`. Do not add new imports of the Mongoose handler unless Mongoose is intentionally restored as a dependency.
-
-Use Prisma delegate methods instead of Mongoose document methods:
-
-```js
-const ecoSchema = require("../schemas/EcoSchema");
-
-const account = await ecoSchema.findFirst({
-  where: { Guild: guild.id, User: user.id },
-});
-
-if (account) {
-  await ecoSchema.update({
-    where: { id: account.id },
-    data: { Wallet: account.Wallet + 100 },
-  });
-}
+```bash
+git clone git@github.com:Doubt-Productions/doubt-bot.git
+cd doubt-bot
+cp .env.example .env
+yarn setup          # install + generate + migrate dev
+yarn dev            # development
+yarn test && yarn lint
+yarn build && yarn start
 ```
 
-Prisma constraints and pitfalls:
+Required env: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, `DATABASE_URL`, `DEVELOPER_DISCORD_IDS`.
 
-- Query filters are nested under `where`, and writes are nested under `data`.
-- Returned records are plain objects. They do not have Mongoose methods such as `save()`, `deleteOne()`, or document-scoped `deleteMany()`.
-- Current models do not define unique compound indexes for guild/user pairs. Existing code usually reads with `findFirst({ where: ... })`, then updates or deletes by the returned `id`.
-- MongoDB is schema-less, so this repo does not use `prisma migrate`. Run `npx prisma generate` after schema edits, and use `npx prisma db push` only when you intentionally need Prisma to sync MongoDB indexes or schema metadata.
+## Prisma migrations
 
-See [Database](/reference/database) for the full model reference.
+Postgres schema changes use **`prisma migrate`**:
 
-## Command And Component Architecture
+| Command | Use |
+|---------|-----|
+| `yarn prisma:migrate:dev` | Create/apply migrations in development |
+| `yarn prisma:migrate:deploy` | Apply pending migrations in staging/production |
+| `yarn prisma:migrate:status` | Inspect migration history |
+| `yarn prisma:generate` | Regenerate client after schema edits |
+| `yarn prisma:push` | **Local experiments only** — bypasses migration history |
 
-Command loading is handled by `src/handlers/commands.js`:
-
-- `src/commands/slash/**`: loaded into `client.collection.interactioncommands` and `client.applicationcommandsArray`.
-- `src/commands/devOnly/**`: loaded into `client.collection.developercommands` and `client.developerCommandsArray`.
-
-Component loading is handled by `src/handlers/components.js`:
-
-- `src/components/buttons/**`: modules need `customId` and `run`.
-- `src/components/selects/**`: modules need `customId` and `run`.
-- `src/components/modals/**`: modules need `customId` and `run`.
-
-Context menus are separate from the command loader. Files in `src/contextmenus/**` are read by `src/utils/getLocalContextMenus.js`, validated by `src/events/validations/contextMenuCommandValidator.js`, and registered at ready time by `src/events/ready/registerContextMenus.js`.
-
-Slash command modules usually export:
-
-```js
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("example")
-    .setDescription("Example command")
-    .toJSON(),
-  run: async (client, interaction) => {
-    // command body
-  },
-};
-```
-
-Developer-only slash commands under `src/commands/devOnly/**` use the same command shape and set `options.developers: true`.
-
-```js
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("deploy")
-    .setDescription("Deploys all the commands to the discord api!"),
-  options: {
-    developers: true,
-  },
-  run: async (client, interaction) => {
-    // developer-only body
-  },
-};
-```
-
-Permission and safety gates are split across validators in `src/events/validations/**`:
-
-- Regular slash commands use `chatInputCommandValidator.js` and `src/utils/getLocalCommands.js`.
-- Developer-only slash commands use `devCommandValidator.js` and `src/utils/getLocalDevCommands.js`.
-- `devOnly: true` or `options.developers: true`: user must be listed in `config.moderation.developers`. Regular slash/context/component validators compare against `interaction.member.id`; the developer-command validator compares against `interaction.user.id`.
-- Missing or empty `config.moderation.developers`: developer-only commands in `devCommandValidator.js` are denied as misconfigured.
-- `options.staffOnly: true`: enforced by `devCommandValidator.js`; the user must be listed in `config.moderation.developers` or in the Mongo `BotStaff` collection (`userId` ACL). Guild roles are not checked.
-- Global bot staff is managed with `/botstaff` (developer-only). It writes `BotStaff` records and syncs the reserved `bot-staff` badge (display-only; privilege comes from Mongo, not the badge).
-- `options.nsfw: true`: enforced by `devCommandValidator.js`; guild channel interactions must run in an NSFW channel.
-- `testMode: true`: command must run in `config.handler.guildId`.
-- `userPermissions`: member must have each listed Discord permission.
-- `botPermissions`: the bot member must have each listed Discord permission.
-- Component validators also prevent users from interacting with another user's command-owned button or select menu when `interaction.message.interaction` is present.
-
-See [Security](/security) for the operator-facing permission and sandbox documentation.
-
-### Cutover from `moderation.staffRoles`
-
-`config.moderation.staffRoles` was removed in favor of the Mongo `BotStaff` ACL. Operators upgrading must not deploy with an empty ACL and expect staff-only commands to keep working.
-
-**Recommended upgrade checklist**
-
-1. Deploy the BotStaff update while keeping `staffRoles` in your live `src/config.js` (do not remove it yet).
-2. Run `npx prisma db push` so the `botstaff` collection exists — `/botstaff migrate` writes via Prisma and will fail if the collection is missing.
-3. While the legacy role IDs are still present, run `/botstaff migrate`. Migration reads `moderation.staffRoles`, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and creates `BotStaff` rows (with badge sync) for members who hold any listed role. If you already removed `staffRoles`, add each person manually with `/botstaff add <user>` instead.
-4. Confirm with `/botstaff list`, then remove `staffRoles` from config.
-
-**Fail-closed behavior:** `options.staffOnly` denies non-developers who are not in `BotStaff`. If the collection is empty, the denial message explicitly tells operators to run `/botstaff migrate` or `/botstaff add` — there is no silent fallback to guild roles.
-
-Command execution contracts:
-
-- The Guild slash-command handler in `src/events/Guild/interactionCreate.js` supports `command.options.cooldown` as a millisecond duration. The cooldown store is an in-memory `Map` keyed by Discord user ID, with command names as values, so it is per-process and clears on restart.
-- Slash cooldowns are per user and per command name. A user can be cooling down for one slash command while using another command, and another user is not blocked by the first user's cooldown.
-- The slash cooldown is recorded before `command.run(client, interaction)` executes. Expiry uses `setTimeout`; if another timer has already removed the user entry, the expiry handler no-ops instead of throwing.
-- The active validation path in `src/events/validations/chatInputCommandValidator.js` calls chat-input commands directly and does not apply the Guild handler cooldown map. Verify the event loader caveat below before depending on `options.cooldown` in production.
-
-Event loader caveat:
-
-- `src/handlers/events.js` registers each direct folder under `src/events` as an event name, except `validations`, which is remapped to `interactionCreate`.
-- Files under `src/events/ready` and `src/events/validations` export callable functions and match that loader.
-- Files under `src/events/Guild` export `{ event, run }` objects and the folder name would register as `Guild`. That shape does not match the current loader's callable function contract or Discord event names such as `messageCreate`, so verify runtime registration before relying on those handlers for component routing.
-
-See [Architecture](/reference/architecture) for the full event pipeline overview.
-
-## Command Deployment
-
-There are two deployment paths:
-
-- Ready-time slash registration in `src/events/ready/registerCommands.js` fetches guild application commands for `process.env.DEV_GUILD_ID`, compares local command data, and creates, edits, or deletes commands.
-- Ready-time context menu registration in `src/events/ready/registerContextMenus.js` also uses `process.env.DEV_GUILD_ID`, but it only creates missing menus and deletes menus marked `deleted`; it does not edit existing menu definitions.
-- Developer command deployment in `src/handlers/deploy.js` writes commands from `client.collection.developercommands` to `config.handler.guildId`. It is invoked after login in `ExtendedClient.start()` without `await`, and can also be triggered by the developer-only `/deploy` command.
-
-Troubleshooting command registration:
-
-- If slash commands do not update, confirm `DEV_GUILD_ID` is set and the bot is in that guild.
-- If developer commands are missing, confirm `config.handler.guildId` resolves to the intended guild and `config.moderation.developers` contains the operator's Discord user ID.
-- If command options are not changing, inspect `src/utils/commandComparing.js`; it normalizes name, description, options, and choices before deciding whether to edit an existing command.
-- `config.handler.deploy` and `config.handler.guildDeploy` exist in `src/example.config.js`, but the verified deployment paths above do not currently read those flags.
+Production and staging: prefer **`yarn setup:prod`** (`generate` + `migrate deploy`).
 
 <Warning>
-After deploying code that changes slash-command permission requirements, restart the bot so `registerCommands.js` syncs `default_member_permissions` to Discord. See [Security](/security#syncing-permission-changes-after-deploy).
+Do not use `db push` for production BotStaff cutover. Apply migrations first, then import staff data.
 </Warning>
 
-## GitHub Release Automation
+## Docker
 
-`.github/workflows/release.yml` publishes GitHub Releases from `main` when `package.json` changes the top-level `version` field.
+Multi-stage `Dockerfile`:
 
-Release workflow behavior:
+1. **build-runner** — `yarn install`, `prisma generate`, `tsc`
+2. **prod-runner** — production deps, generated client, `node build/main.js`
 
-1. A push to `main` starts the `Release` workflow.
-2. The workflow reads `package.json` with Node and derives the release tag as `v<version>`, for example `v1.2.1`.
-3. It checks only the latest pushed commit range, `HEAD~1..HEAD`, for a `package.json` line containing `"version"`.
-4. If the version changed, it fetches tags and skips the release when the derived tag already exists.
-5. If the tag is new, it sets up Node.js `22`, installs dependencies with `npm ci || npm install`, runs `npm test`, generates a changelog from commits since the most recent version-sorted tag, and creates a non-draft, non-prerelease GitHub Release with `softprops/action-gh-release`.
+Sample `docker-compose.yml` provides `app` + `postgres:16` with a healthcheck. Set secrets via environment; mount or inject `DATABASE_URL` for external Postgres when not using the bundled `db` service.
 
-Release operator notes:
+Boot command: `node build/main.js` (run migrations in your deploy pipeline before starting the container).
 
-- Bump `package.json` in the commit that lands on `main` when you want a release. The workflow does not create or commit version bumps.
-- The workflow creates a Git tag through the GitHub Release action; do not pre-create the same `v<version>` tag unless you intend the workflow to skip release creation.
-- The workflow publishes a GitHub Release only. It does not publish an npm package, build Docker images, deploy the bot, or update Discord commands.
-- `contents: write` permission is required so the workflow token can create the release and tag.
-- Release creation is gated by `npm test`; keep tests passing before merging a version bump.
+## Application commands
 
-## Economy Notes
+- discordx loads command classes via `@discordx/importer` (`importx` in `main.ts`).
+- On ready: `bot.initApplicationCommands()` syncs guild slash commands.
+- **`CLEAR_GUILD_COMMANDS_ON_BOOT=true`** — destructive one-time maintenance; clears guild commands for all cached guilds on startup.
 
-Economy data is stored in MongoDB through the `EcoSchema` Prisma model. `src/schemas/EcoSchema.js` exports the `prisma.ecoSchema` delegate, and the model maps to the `ecoschemas` collection:
+Regression test `tests/boot-command-deploy.test.cjs` documents that normal boot must not call `clearApplicationCommands`.
 
-```prisma
-model EcoSchema {
-  id     String  @id @default(auto()) @map("_id") @db.ObjectId
-  Guild  String?
-  User   String?
-  Bank   Float?
-  Wallet Float?
+## Guards and staff ACL
 
-  @@map("ecoschemas")
-}
+- Developers: `DEVELOPER_DISCORD_IDS` (comma-separated).
+- Staff commands: `BotStaff` table **or** developer (`canUseStaffCommands`).
+- Badge grants do **not** substitute for ACL (`tests/staff-acl-not-badge.test.cjs`).
+
+BotStaff operator order:
+
+1. `yarn prisma:migrate:deploy`
+2. Import staff (`yarn migrate:mongo` and/or `/botstaff add`)
+3. `/botstaff migrate` for badge re-sync if needed
+4. `/botstaff list`
+
+TypeScript **`/botstaff migrate`** does **not** read legacy `moderation.staffRoles` from JS `config.js`.
+
+## Mongo→Postgres data migration
+
+Script: `yarn migrate:mongo` / `yarn migrate:mongo:dry-run` (`scripts/migrate-mongo.ts`).
+
+**Prerequisites**
+
+```bash
+yarn prisma:generate
+yarn prisma:migrate:deploy
 ```
 
-User-facing economy commands live in `src/commands/slash/Economy/**`:
+**Environment**
 
-- `/economy`: creates an account with `Wallet: 0` and `Bank: 1000`, or deletes the found account with `ecoSchema.delete({ where: { id: doc.id } })`.
-- `/bal`: reports wallet, bank, and total balances.
-- `/deposit amount`: moves money from wallet to bank. `amount` can be a number or `all`.
-- `/withdraw amount`: moves money from bank to wallet. `amount` can be a number or `all`.
-- `/beg`: randomly chooses a positive or negative wallet change. It updates `Wallet` only if the user has an account, but still sends the result reply when no account exists.
-- `/rob user`: requires both users to have economy accounts and the robber to have at least `$100`, and it takes a per-user cooldown lock before database reads. The regression tests document the intended success/failure transfer behavior; verify `rob.js` directly before changing runtime behavior because several past bugs involved cooldown races and uncapped fines.
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres target (writes) |
+| `MONGO_SOURCE_URL` or `SOURCE_DATABASE_URL` | Mongo source (read-only) |
+| `DEVELOPER_DISCORD_IDS` | Optional — display-only badge sync during migrate |
 
-`/rob` workflow and constraints:
+**Order (high level)**  
+Badge → User → UserBadge → BotStaff / Removal → Welcome / Setup / JTC → Economy / Xp / Afk.
 
-1. The command checks an in-memory per-user cooldown before reading from MongoDB.
-2. It immediately records the robber's user ID in `timeout` before the first `await`; this is the command's only guard against concurrent calls from the same user.
-3. It rejects self-robs, missing robber or target accounts, robber wallets below `$100`, and target wallets below `$100`.
-4. It rolls a 1-100 chance. Values up to `50` are successful robberies.
-5. The transfer or fine amount is rolled from `1..TargetData.Wallet`.
-6. On success, the robber gains the amount and the target loses it.
-7. On failure, the robber pays the target `Math.min(amount, Data.Wallet)` so a fine cannot make the robber wallet negative.
-8. After a saved success or failure, the cooldown is released after 60 seconds. Early validation failures and thrown errors release it immediately.
+- Skips unused legacy collections (e.g. `chatbots`); reports unknown leftovers.
+- Economy duplicates: keeps highest wallet+bank total; conflicts logged to CSV.
+- Idempotent upserts on natural keys — safe to re-run after fixing conflicts.
 
-Maintenance pitfalls for economy commands:
+Legacy operators still on Doubt-Discord-Bot should finish BotStaff migration there or via this tool **before** decommissioning Mongo.
 
-- Keep `try`/`catch` around all awaited work after the cooldown lock, or unexpected errors can leave the user stuck on cooldown.
-- Do not move `timeout.push(user.id)` below an `await`; that reintroduces the race covered by `tests/rob-cooldown-race.test.js`.
-- Because `EcoSchema` has no minimum-value validation, command code must prevent negative balances before calling `ecoSchema.update()`.
-- Because there is no unique Prisma constraint for `{ Guild, User }`, account creation still relies on application-level `findFirst` checks.
-- Run `node --check src/commands/slash/Economy/rob.js` or `npm test` after editing this module; a previous bad merge left invalid JavaScript that broke command loading during startup.
+## Slash-only / intents
 
-Regression tests in `tests/` document important economy invariants:
+`src/bot.ts` omits Message Content Intent. CI runs `tests/no-message-content-intent.test.cjs`. AFK (`src/events/afkCheck.ts`) must remain compatible with mention-only detection.
 
-- `tests/economy-amount-all.test.js`: `all` must match case-insensitively for deposit and withdraw.
-- `tests/economy-account-delete.test.js`: documents the old deletion failure mode where code relied on document-shaped `deleteMany()` behavior. Current Prisma code should delete or update through the model delegate.
-- `tests/rob-syntax.test.js`: `/rob` must parse as valid JavaScript before the command loader requires it.
-- `tests/rob-cooldown-race.test.js`: `/rob` must take its per-user cooldown lock before any `await` to avoid overlapping balance saves.
-- `tests/rob-caught-penalty.test.js`, `tests/rob-failure-penalty.test.js`, and `tests/rob-fine-cap.test.js`: a failed robbery fine must not exceed the robber's current wallet.
+## Reserved badges
 
-When changing economy code, prefer adding or updating focused `node:test` regression tests in `tests/` before adjusting command behavior.
+`ensureReservedBadges()` on ready; `/badge` rejects reserved keys and lookalikes. Staff sync via `botStaffService` + `badgeService`.
 
-## Operational Pitfalls
+## Economy invariants
 
-- The bot requires Discord gateway intents that match the enabled features. `ExtendedClient` currently passes a numeric intent bitfield, so keep Discord Developer Portal settings in sync when changing message, member, or guild-dependent behavior.
-- Prisma/MongoDB connection failures are logged and rethrown from `src/handlers/prisma.js`; `ExtendedClient.start()` attaches a `.catch()` and does not block Discord login while the connection attempt runs. Commands that query MongoDB still depend on a valid runtime URI, network, generated Prisma client, and database credentials.
-- Top.gg autoposting only starts when `TOPGG_TOKEN` is present, but the functions module is required during client startup.
-- The health endpoint is not authenticated. Do not expose port `8080` publicly unless that is intentional for the hosting environment.
-- Message context menus (for example **Translate Message**) receive the targeted message content in the interaction payload and do not require Message Content Intent.
+Economy logic lives in `src/services/economyService.ts` and command handlers under `src/commands/categories/economy/`. Account uniqueness is enforced in Postgres (`@@unique([guildId, discordId])`). When changing `/rob` cooldown or penalty logic, add or update focused tests under `tests/`.
+
+## Legacy differences (Doubt-Discord-Bot)
+
+The JS bot used:
+
+- `src/config.js` + `PRODUCTION` toggle and separate `DEV_MONGODB_URI` / `MONGODB_URI`
+- Express health server on `0.0.0.0:8080`
+- Manual command validators and `devOnly/` deployment to `handler.guildId`
+- Mongo `prisma db push` (no migrate)
+- `/botstaff migrate` importing `moderation.staffRoles`
+- MessageCollector-based welcome message setup (replaced by **modals** in doubt-bot)
+
+Do not assume those behaviors on doubt-bot without verifying source.
+
+## CI
+
+GitHub Actions on doubt-bot runs `yarn test` and `yarn build` on pushes and PRs.
+
+## Release automation
+
+Legacy Doubt-Discord-Bot may still publish GitHub Releases from `package.json` version bumps. doubt-bot release process follows the private repo's workflows — not documented here.
+
+## Operational pitfalls
+
+- Empty `DEVELOPER_DISCORD_IDS` blocks `/botstaff` and developer tooling.
+- Postgres unreachable at boot: commands depending on DB will fail until connectivity and migrations are fixed.
+- Do not expose legacy `:8080` health checks — doubt-bot has no Express sidecar.
+- After permission or command metadata changes, restart to re-sync guild commands.

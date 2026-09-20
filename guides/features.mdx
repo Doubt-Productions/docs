@@ -1,286 +1,151 @@
 ---
 title: "Features Guide"
-description: "In-depth guides for economy, tickets, welcome, AFK, moderation, and more"
+description: "Economy, tickets, welcome, AFK, JTC, rank, badges, and BotStaff on doubt-bot"
 ---
 
-Detailed guides for each major feature of the Doubt Discord Bot.
+Feature behavior for the TypeScript bot (**[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)**). Data is stored in **PostgreSQL** unless noted. Legacy Mongo collections on [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) are migrated with `yarn migrate:mongo`.
 
 ## Economy System
 
-The economy system provides a virtual currency system for server members.
+Virtual currency per guild member (`EconomyAccount`: `guildId`, `discordId`, `wallet`, `bank`).
 
-### Getting Started
+### Getting started
 
-1. Create an account with `/economy` and click **Create**
-2. New accounts start with **$0 in wallet** and **$1000 in bank**
-3. Use `/bal` to check your balance at any time
+1. Run `/economy` and click **Create**.
+2. Defaults: **$0 wallet**, **$1000 bank**.
+3. Use `/bal` anytime.
 
 ### Commands
 
-- **`/deposit <amount>`** — Move money from wallet to bank. Use `all` to deposit everything.
-- **`/withdraw <amount>`** — Move money from bank to wallet. Use `all` to withdraw everything.
-- **`/beg`** — Random chance to gain or lose money (affects wallet only).
-- **`/rob <user>`** — Attempt to rob another user:
-  - Both users must have an account with at least $100 in their wallet
-  - 50% success chance
-  - Success: steal a random amount from the target's wallet
-  - Failure: pay a penalty to the target (capped at your wallet balance)
-  - 60-second cooldown between attempts
-- **`/economy`** → **Delete** — Permanently delete your account
-
-### Data Storage
-
-Economy data is stored in the `ecoschemas` MongoDB collection with fields for Guild, User, Bank, and Wallet.
+- **`/deposit`**, **`/withdraw`** — `all` supported (case-insensitive).
+- **`/beg`** — random wallet adjustment.
+- **`/rob`** — both users need accounts and ≥ $100 wallet; cooldown and penalty rules apply.
+- **`/economy` → Delete** — removes the Postgres row.
 
 ---
 
 ## Ticket System
 
-A configurable support ticket system with HTML transcripts.
+Configured via `/setup` → ticket flow (`Setup` model: category, panel channel, staff role).
 
-### Setup
+### Flow
 
-1. Run `/setup` in your server
-2. Select **Ticket** from the setup menu
-3. Configure:
-   - **Category** — the channel category where tickets are created
-   - **Channel** — the channel where the ticket panel is posted
-   - **Role** — the support role that gets access to tickets
-
-### How It Works
-
-1. Members select a ticket type from the panel select menu
-2. A modal appears asking for a reason/description
-3. A private channel is created named `ticket-<username>`
-4. The channel is visible only to the member, support role, and admins
-5. When resolved, click the **Close Ticket** button
-6. An HTML transcript is generated and DM'd to the ticket creator
-7. The channel is deleted after 10 seconds
+1. Member picks a subject on the ticket panel select menu.
+2. A **modal** collects the reason (`ticket-modal`).
+3. A private channel `ticket-<displayName>` is created with permission overwrites for the opener, bot, and staff role.
+4. **Close Ticket** button runs authorization (see [Security](/security#ticket-close-authorization)).
+5. The opener receives a DM embed; the channel deletes after 10 seconds.
 
 <Note>
-Ticket close authorization is restricted to the ticket opener, the configured support role, or members with **Manage Channels**. See [Security](/security#ticket-close-authorization).
+The TypeScript port does not generate HTML transcripts in-channel; closure notifies via DM embed. Legacy HTML transcripts remain on Doubt-Discord-Bot until ported.
 </Note>
 
 ---
 
 ## Welcome System
 
-Automated welcome messages and role assignment for new members.
+Per-guild configuration (`WelcomeConfig` table) — not limited to a single support guild.
 
 ### Setup
 
-1. Run `/setup` in your server
-2. Select **Welcome** from the setup menu
-3. Configure:
-   - **Channel** — where welcome messages are sent
-   - **Message** — the welcome message template
-   - **Rules** — rules channel reference
-   - **Member Role** — auto-assigned role for human members
-   - **Bot Role** — auto-assigned role for bot members
+1. `/setup` → Welcome options.
+2. Set channel, rules channel, member/bot roles via select menus.
+3. Set the message template via a **modal** (`welcome-message-modal`) — placeholders `{user}`, `{rules}`, `{server}`.
 
-### Message Placeholders
+### On join
 
-| Placeholder | Replaced With |
-|-------------|---------------|
-| `{user}` | The new member's mention |
-| `{rules}` | The rules channel mention |
-| `{server}` | The server name |
-
-### Limitations
-
-The welcome system currently only fires for the support guild (`config.handler.guildId`). It checks `guild.id === config.handler.guildId` before sending welcome messages.
+`guildMemberAdd` loads config, sends the formatted message, and assigns member or bot role when configured.
 
 ---
 
 ## AFK System
 
-Let others know when you're away from the keyboard.
+Stored in `Afk` (`guildId`, `discordId`, `reason`, stored nickname).
 
-### Setting AFK
-
-```text
-/afk set [message]
-```
-
-- Your nickname is prefixed with `[AFK]`
-- An optional reason message can be provided
-- Defaults to "No reason provided."
-
-### Automatic AFK Notifications
-
-When someone mentions an AFK user, the bot replies with an embed showing:
-- The AFK user's display name
-- Their AFK reason
-- The notification auto-deletes after 10 seconds
-
-Mention detection uses Discord's `message.mentions` metadata — the bot does not read message text and does not require Message Content Intent.
-
-### Returning from AFK
-
-AFK is automatically cleared when the user sends a message (no message content is read). Alternatively:
-
-```text
-/afk remove
-```
-
-- Your original nickname is restored
-- A welcome-back message is shown (auto-deletes after 4 seconds)
+- **`/afk set [message]`** — sets DB row and `[AFK]` nickname prefix.
+- **`/afk remove`** — clears row and restores nickname.
+- **`messageCreate`** — clears AFK when the author sends a message; notifies when someone **mentions** an AFK user (no Message Content Intent).
 
 ---
 
 ## Join-to-Create (JTC)
 
-Temporary voice channels that are created when a user joins a hub channel.
+Configured in `/setup` (`JtcSetup`, `JtcChannel` models).
 
-### How It Works
-
-1. An admin configures a hub voice channel via the setup system
-2. When a user joins the hub channel, a temporary voice channel is created
-3. The channel is named after the user (e.g., `🔊 | Username`)
-4. The user gets Manage Channels permission on their channel
-5. When the owner leaves:
-   - If others remain, ownership transfers to a random member
-   - If empty, the channel is automatically deleted
-
-### Configuration
-
-JTC setup data is stored in the `jtcsetups` collection with the hub channel ID, category, and active temporary channels.
+1. Admin sets hub channel and category.
+2. Joining the hub creates a temporary voice channel; owner gets manage permissions.
+3. `voiceStateUpdate` handles transfer/delete when the owner leaves.
 
 ---
 
 ## Rank / XP System
 
-Per-guild leveling system with visual rank cards.
+`Xp` rows link to `User` records (`amount`, `level` per guild).
 
-### Commands
+- **`/rank info`** — embed with level and XP.
+- **`/rank leaderboard`** — top ten in guild.
+- **`/rank reset`**, **`/rank set`** — Manage Server.
 
-- **`/rank info [user]`** — View a rank card showing current level and XP
-- **`/rank reset <user>`** — Reset a user's XP and level to defaults
-- **`/rank set <user> <level>`** — Manually set a user's level
-
-### Rank Cards
-
-Rank cards are generated using the `canvacord` library and display:
-- User avatar
-- Current level
-- XP progress
-- Username
-
-### Data Storage
-
-XP data is stored per user per guild in the `xps` collection with `guildId`, `userId`, `xp`, and `level` fields.
+Legacy Canvacord image cards from Doubt-Discord-Bot are not used in doubt-bot.
 
 ---
 
 ## Badge System
 
-A global badge system managed by bot developers.
+Normalized Postgres models: `Badge`, `User`, `UserBadge`.
 
-### Managing Badges (Developer Only)
+### Administration (staff or developer)
 
-- **`/badge create <name> <emoji>`** — Create a new badge with a name and emoji
-- **`/badge edit <id> [name] [emoji]`** — Edit an existing badge
-- **`/badge delete <id>`** — Delete a badge
-- **`/badge give <id> <user>`** — Assign a badge to a user
-- **`/badge take <id> <user>`** — Remove a badge from a user
-- **`/badge list`** — List all available badges
+- **`/badge create|update|delete|list|user`** — see [Commands](/guides/commands#badge-staffonly--botstaff-or-developer).
 
 <Warning>
-The reserved **`bot-staff`** badge (🛡️ Bot Staff) cannot be created, edited, deleted, given, or taken through `/badge`. Use `/botstaff` to manage it. The badge is display-only — staff privilege comes from the `BotStaff` Mongo ACL, not from holding the badge.
+**`bot-staff`** is reserved. `/badge` blocks reserved keys and lookalikes. Use **`/botstaff`** for staff roster changes.
 </Warning>
 
-### Viewing Badges
+### Display
 
-Badges appear on user info displays:
-- `/user info` command
-- **Info** context menu (right-click → Info)
+Badges appear on user-facing commands as they are wired (profile/info paths evolve with ports).
 
 ---
 
 ## Global Bot Staff
 
-Cross-guild bot staff replaces the legacy `config.moderation.staffRoles` approach. Staff privilege is stored in MongoDB and managed by developers.
+Postgres `BotStaff` replaces legacy `config.moderation.staffRoles`.
 
-### How it works
+1. Developer runs **`/botstaff add`** → row + badge sync.
+2. **`StaffOnly`** commands check `BotStaff` or developer IDs.
+3. **`/botstaff remove`** → removal audit + badge strip.
+4. **`/botstaff migrate`** → badge re-sync for existing rows only.
 
-1. A developer runs `/botstaff add <user>` to grant global staff access.
-2. The bot upserts a `BotStaff` row (`userId`, `addedBy`, `addedAt`) and syncs the reserved `bot-staff` badge.
-3. Staff-only commands (`/staffonly`, `/nsfw`, and any command with `options.staffOnly: true`) check the ACL at runtime.
-4. Users in `config.moderation.developers` always pass the staff gate, even without a `BotStaff` row.
-
-### Managing staff
-
-| Command | Purpose |
-|---------|---------|
-| `/botstaff add <user>` | Add a user to global bot staff |
-| `/botstaff remove <user>` | Remove a user from global bot staff |
-| `/botstaff list` | List all staff with audit metadata |
-| `/botstaff migrate` | One-time import from legacy `moderation.staffRoles` |
-
-### Upgrading from `staffRoles`
+### Cutover from legacy Mongo / JS bot
 
 <Warning>
-Do not deploy the BotStaff update with an empty ACL and expect staff-only commands to keep working. There is no silent fallback to guild roles.
+Run **`yarn prisma:migrate:deploy`** before importing staff. Do not rely on an empty ACL during cutover.
 </Warning>
 
-**Operator cutover checklist:**
+1. Deploy doubt-bot with current migrations applied.
+2. Run **`yarn migrate:mongo`** (includes BotStaff) **or** add each member with **`/botstaff add`**.
+3. **`/botstaff migrate`** for badge sync if needed.
+4. **`/botstaff list`** to verify.
 
-1. Deploy the BotStaff update while keeping `moderation.staffRoles` in your live `config.js` (do not remove it yet).
-2. Run **`npx prisma db push`** so the `botstaff` collection exists — `/botstaff migrate` writes via Prisma and will fail if the collection is missing.
-3. While `staffRoles` is still present, run **`/botstaff migrate`**. If you already removed `staffRoles`, add each person with **`/botstaff add`** instead.
-4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+Legacy **`/botstaff migrate`** on Doubt-Discord-Bot (from `staffRoles`) applies only on the JS bot before data export.
 
-The migrate subcommand reads legacy role IDs from config, resolves the support guild (`variables.supportServerId` or `handler.guildId`), and imports members who hold any listed role.
-
-See [Configuration](/get-started/configuration#global-bot-staff) and [Security](/security#global-bot-staff-acl) for more detail.
+See [Configuration](/get-started/configuration#global-bot-staff) and [Security](/security#global-bot-staff-acl).
 
 ---
 
-## Moderation
+## Moderation (legacy until port)
 
-### Available Actions
-
-| Command | Description |
-|---------|-------------|
-| `/kick <user> [reason]` | Remove a member from the server |
-| `/ban <user> [reason]` | Permanently ban a member |
-| `/unban <user_id>` | Remove a ban by user ID |
-| `/timeout <user> <duration> [reason]` | Temporarily mute a member (5s to 28 days) |
-
-### AutoMod Rules
-
-The `/automod` command creates Discord AutoMod rules:
-
-- **Flagged Words** — Alerts in a channel when flagged content is detected
-- **Spam Messages** — Detects and alerts on message spam
-- **Mention Spam** — Blocks messages exceeding a mention threshold
-- **Keyword** — Blocks messages containing a specific keyword
-
-### Behavior
-
-- Kick and ban commands attempt to DM the user before the action
-- The bot requires appropriate permissions (Kick Members, Ban Members, Moderate Members)
-- Timeout duration is parsed using the `ms` library (e.g., `5m`, `1h`, `7d`)
-
-See [Security](/security) for Discord permission gates on moderation commands.
+Kick, ban, timeout, and automod live on **Doubt-Discord-Bot** today. doubt-bot `Setup` includes automod-related fields for future use; slash moderation commands are not registered yet.
 
 ---
 
-## Translation
+## Health / uptime
 
-Right-click any message → **Apps** → **Translate Message** to translate it to English using Google Translate. The translation appears as an ephemeral embed visible only to you.
+The TypeScript bot does **not** expose the legacy Express `:8080` health server. Use your process manager, Docker healthchecks, or Discord connectivity for monitoring.
 
 ---
 
-## Health Check
+## Help menu
 
-The bot runs an Express server on port 8080 that responds to `GET /` with a status message. This can be used for uptime monitoring services.
-
-```bash
-curl http://localhost:8080/
-# → Bot is online! Join our discord here: https://discord.gg/rmqAhQz2qu
-```
-
-<Warning>
-The health endpoint is not authenticated. Do not expose port 8080 publicly unless that is intentional for your hosting environment.
-</Warning>
+`/help` builds categories from discordx `@Category()` metadata and restricts select-menu use to the command invoker (same pattern as legacy help ownership).

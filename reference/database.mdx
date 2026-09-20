@@ -1,252 +1,196 @@
 ---
 title: "Database"
-description: "Prisma schema, MongoDB models, and data layer for Doubt Discord Bot"
+description: "Prisma schema and PostgreSQL models for doubt-bot"
 ---
 
-Doubt uses **MongoDB** as its database, accessed through **Prisma v6**. The Prisma schema is defined in `prisma/schema.prisma`.
+**[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** uses **PostgreSQL** through **Prisma 6**. Schema: `prisma/schema.prisma`. Generated client output: `src/generated/prisma`.
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+
+Runtime and CLI both read **`DATABASE_URL`**.
 
 ## Connection
 
-The Prisma client is initialized in `src/handlers/prisma.js` as a singleton. It reads the MongoDB URI from `config.handler.mongodb.uri` (which resolves to `DEV_MONGODB_URI` or `MONGODB_URI` based on the `PRODUCTION` flag).
+- Singleton Prisma client in `src/utils/prisma.ts`
+- Graceful shutdown closes connections from `src/main.ts`
 
-Connection is established during bot startup if `config.handler.mongodb.toggle` is `true`.
+## Migrations (production)
 
-## Prisma CLI
-
-For Prisma CLI tools (like `prisma db push` or `prisma studio`), set the `DATABASE_URL` environment variable in `.env` to your MongoDB connection string.
+Use the migrate workflow — **not** `db push` in production:
 
 ```bash
-# Sync indexes to the database
-npx prisma db push
-
-# Browse data interactively
-npx prisma studio
-
-# Regenerate the client after schema changes
-npx prisma generate
+yarn prisma:generate
+yarn prisma:migrate:dev      # local schema changes
+yarn prisma:migrate:deploy   # staging/production
+yarn prisma:migrate:status
 ```
 
 <Note>
-MongoDB does not support migrations (`prisma migrate` commands will not work).
+Legacy Doubt-Discord-Bot used MongoDB with `prisma db push`. doubt-bot uses versioned SQL migrations under `prisma/migrations/`.
 </Note>
+
+Optional local experiments only:
+
+```bash
+yarn prisma:push
+```
+
+Browse data:
+
+```bash
+npx prisma studio
+```
 
 ## Models
 
-### EcoSchema
+### User
 
-Economy accounts — one per user per guild.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `Guild` | String? | Discord guild ID |
-| `User` | String? | Discord user ID |
-| `Bank` | Float? | Bank balance |
-| `Wallet` | Float? | Wallet balance |
-
-**Collection:** `ecoschemas`
-
-**Used by:** `/economy`, `/bal`, `/deposit`, `/withdraw`, `/beg`, `/rob`
-
----
-
-### Users
-
-User configuration and badge assignments.
+Discord users in Postgres (badges and XP relations).
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `user` | String? | Discord user ID |
-| `badges` | String[] | Array of badge IDs assigned to this user |
+| `id` | UUID | Primary key |
+| `discordId` | String | Unique Discord snowflake |
+| `username` | String | Last known username |
+| `language` | String | Default `nl` |
+| `createdAt` / `updatedAt` | DateTime | Timestamps |
 
-**Collection:** `users`
-
-**Used by:** `/user info`, `/badge give/take`, context menus (info, profile)
+Relations: `badges` → `UserBadge`, `xp` → `Xp`
 
 ---
 
 ### Badge
 
-Global badge definitions (not per-guild).
+Global badge definitions.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `badgeId` | String? | Custom badge identifier (mapped from `id` in MongoDB) |
-| `name` | String? | Display name |
-| `emoji` | String? | Emoji string or custom emoji reference |
-| `animated` | Boolean? | Whether the emoji is animated |
-| `emojiId` | String? | Discord emoji snowflake |
-| `createdAt` | String? | Creation timestamp |
+| `key` | String | Primary key (e.g. `bot-staff`) |
+| `displayName` | String | Shown name |
+| `emoji` | String? | Optional emoji |
+| `reserved` | Boolean | `true` for system badges |
 
-**Collection:** `badges`
+Reserved **`bot-staff`** is ensured on ready via `ensureReservedBadges()`.
 
-**Used by:** `/badge` (create/edit/delete/give/take/list), user info displays
+---
 
-<Note>
-The reserved `bot-staff` badge (🛡️ Bot Staff) is created and assigned automatically by `/botstaff`. It cannot be managed through `/badge` — see [Security](/security#global-bot-staff-acl).
-</Note>
+### UserBadge
+
+Grants linking users to badges (display only for staff badge).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `userId` | String | FK → `User` |
+| `badgeKey` | String | FK → `Badge` |
+| `grantedAt` | DateTime | When granted |
+
+Unique on `(userId, badgeKey)`.
 
 ---
 
 ### BotStaff
 
-Global bot staff access-control list — one row per staff member (cross-guild).
+Global staff **ACL** — one row per staff Discord user.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `userId` | String | Discord user ID (unique) |
-| `addedBy` | String | Discord user ID of the developer who added this staff member |
-| `addedAt` | DateTime | When the staff member was added (default: now) |
+| `id` | UUID | Primary key |
+| `discordId` | String | Unique Discord user ID |
+| `addedBy` | String | Developer Discord ID |
+| `addedAt` | DateTime | When added |
 
-**Collection:** `botstaff`
-
-**Used by:** `/botstaff` (add/remove/list/migrate), `staffOnly` command gate in `devCommandValidator.js`
-
-**Indexes:** `userId` is unique — one `BotStaff` row per Discord user.
+Used by `/botstaff` and `StaffOnly` guards.
 
 <Warning>
-After schema changes that add this model, run `npx prisma db push` before using `/botstaff` or staff-only commands in production.
+Run **`yarn prisma:migrate:deploy`** before creating BotStaff rows or running `/botstaff`. An empty table means staff-only commands fail closed.
 </Warning>
 
 ---
 
-### Afk
+### BotStaffRemoval
 
-AFK status entries — one per user per guild.
+Audit trail when staff are removed.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `User` | String? | Discord user ID |
-| `Guild` | String? | Discord guild ID |
-| `Message` | String? | AFK reason message |
-| `Nickname` | String? | Original nickname (restored when AFK removed) |
+| `discordId` | String | Unique removed user |
+| `removedBy` | String | Developer ID |
+| `removedAt` | DateTime | Removal time |
 
-**Collection:** `afks`
+---
 
-**Used by:** `/afk set/remove`, AFK check event handler
+### Setup
 
-<Note>
-AFK uses `messageCreate` for clearing status and mention notifications via `message.mentions`. It does not read `message.content` and does not require Message Content Intent.
-</Note>
+Per-guild ticket (and automod-related) configuration.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `guildId` | String | Unique guild |
+| `ticketChannelId` | String? | Panel channel |
+| `ticketCategoryId` | String? | Ticket category |
+| `ticketStaffRoleId` | String? | Support role |
+| `ticketLogChannelId` | String? | Optional log channel |
+| Automod fields | various | Stored for future automod port |
+
+---
+
+### EconomyAccount
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `guildId`, `discordId` | String | Unique pair |
+| `wallet`, `bank` | Decimal | Balances |
 
 ---
 
 ### Xp
 
-Experience points and level data — one per user per guild.
-
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `guildId` | String | Discord guild ID (required) |
-| `userId` | String | Discord user ID (required) |
-| `xp` | Float | Experience points (default: 0) |
-| `level` | Float | Current level (default: 1) |
-
-**Collection:** `xps`
-
-**Used by:** `/rank info/reset/set`
+| `guildId`, `userId` | String | Unique pair (`userId` → `User.id`) |
+| `amount` | Int | XP total |
+| `level` | Int | Current level |
 
 ---
 
-### Welcome
-
-Welcome system configuration — one per guild.
+### Afk
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `Guild` | String? | Discord guild ID |
-| `Channel` | String? | Welcome message channel ID |
-| `Message` | String? | Welcome message template (supports `{user}`, `{rules}`, `{server}` placeholders) |
-| `Rules` | String? | Rules channel ID |
-| `MemberRole` | String? | Auto-role for human members |
-| `BotRole` | String? | Auto-role for bot members |
-
-**Collection:** `welcomes`
-
-**Used by:** Setup wizard (welcomeSSM), `guildMemberAdd` event
+| `guildId`, `discordId` | String | Unique pair |
+| `reason` | String? | AFK message |
+| `nickname` | String? | Stored nickname to restore |
 
 ---
 
-### Ticket
-
-Ticket system configuration — one per guild.
+### WelcomeConfig
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `Guild` | String? | Discord guild ID |
-| `Channel` | String? | Ticket panel channel ID |
-| `Category` | String? | Category for ticket channels |
-| `Ticket` | String? | Current ticket type/subject |
-| `Role` | String? | Support role with ticket access |
-
-**Collection:** `tickets`
-
-**Used by:** Setup wizard (ticketSSM), ticket menu, ticket modal
+| `guildId` | String | Unique guild |
+| `channelId` | String? | Welcome channel |
+| `message` | String? | Template with placeholders |
+| `rulesChannelId` | String? | Rules channel |
+| `memberRoleId` / `botRoleId` | String? | Auto-roles |
+| `welcomeRoleIds` | String[] | Extra role IDs |
 
 ---
 
-### Chatbot
+### JtcSetup & JtcChannel
 
-Chatbot channel configuration — one per guild.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `Guild` | String? | Discord guild ID |
-| `Channel` | String? | Designated chatbot channel ID |
-
-**Collection:** `chatbots`
-
-**Used by:** Currently imported but not actively used in any command.
+Join-to-create hub configuration and active temporary channels (`setupId`, `channelId`, `ownerId`).
 
 ---
 
-### JTCSetup
+## Legacy Mongo collections
 
-Join-to-Create voice channel configuration — one per guild.
+[Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) used Mongo collections such as `ecoschemas`, `botstaff`, `welcomes`, `tickets`, `jtcsetups`. The **`yarn migrate:mongo`** tool maps them into the Postgres models above. Inert legacy data (e.g. old `guildschemas`) is skipped or reported in the migrator summary.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | ObjectId | Auto-generated primary key |
-| `GuildID` | String | Discord guild ID (required) |
-| `Category` | String | Parent category for voice channels (required) |
-| `Channel` | String | Hub voice channel ID (required) |
-| `Channels` | JTCChannel[] | Array of active temporary channels |
+## Import paths
 
-**JTCChannel (embedded type):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ChannelID` | String | Temporary channel ID |
-| `OwnerID` | String | Channel owner's user ID |
-| `MessageID` | String | Dashboard message ID |
-| `isLocked` | Boolean | Whether the channel is locked (default: false) |
-| `participantCount` | Int? | Current participant count |
-| `isInvisible` | Boolean | Whether the channel is hidden (default: false) |
-
-**Collection:** `jtcsetups`
-
-**Used by:** `voiceStateUpdate` event handler
-
-## Schema Files
-
-The schema files in `src/schemas/` are thin re-exports of Prisma model delegates:
-
-```js
-// Example: src/schemas/EcoSchema.js
-const { prisma } = require("../handlers/prisma");
-module.exports = prisma.ecoSchema;
-```
-
-This preserves backward-compatible import paths throughout the codebase while using Prisma under the hood.
-
-<Note>
-Legacy `guildschemas` documents may still exist in MongoDB from older prefix-command builds. They are inert after the `GuildSchema` model was removed and can be ignored or cleaned up manually.
-</Note>
+Application code imports Prisma via `src/utils/prisma.ts` and generated types from `src/generated/prisma` — not the old `src/schemas/*.js` re-export pattern from the JS bot.

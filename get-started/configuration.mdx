@@ -1,140 +1,107 @@
 ---
 title: "Configuration"
-description: "Environment variables and config.js reference for Doubt Discord Bot"
+description: "Environment variables for the Doubt TypeScript bot (doubt-bot)"
 ---
 
-Doubt uses two configuration files and environment variables. Both configuration files are `.gitignore`d for security.
+Configuration for **[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** is environment-driven. Copy `.env.example` to `.env` and edit locally; do not commit secrets.
 
-## Environment Variables (`.env`)
+There is no `src/config.js` in the TypeScript rewrite — developer IDs, Discord credentials, and the database URL all come from `.env` (loaded via `dotenv` in `src/main.ts`).
 
-Copy `.env.example` to `.env` and fill in the values.
-
-### Required Variables
-
-| Variable | Description | Used When |
-|----------|-------------|-----------|
-| `PRODUCTION` | Set to `true` for production, `false` for development | Always — controls which token/ID/URI set is used |
-| `DEV_TOKEN` | Discord bot token for development | `PRODUCTION=false` |
-| `DEV_CLIENT_ID` | Discord application ID for development | `PRODUCTION=false` |
-| `DEV_GUILD_ID` | Guild ID for slash command registration | Always |
-| `DEV_MONGODB_URI` | MongoDB connection string for development | `PRODUCTION=false` |
-
-### Production Variables
+## Required variables
 
 | Variable | Description |
 |----------|-------------|
-| `CLIENT_TOKEN` | Discord bot token for production |
-| `CLIENT_ID` | Discord application ID for production |
-| `GUILD_ID` | Support/production guild ID |
-| `MONGODB_URI` | MongoDB connection string for production |
+| `DISCORD_TOKEN` | Bot token from the Discord Developer Portal |
+| `DISCORD_CLIENT_ID` | Application (client) ID |
+| `DISCORD_GUILD_ID` | Primary guild ID used during development and guild command registration |
+| `DATABASE_URL` | PostgreSQL connection string for **runtime and Prisma CLI** |
+| `DEVELOPER_DISCORD_IDS` | Comma-separated Discord user IDs with developer access |
 
-### Optional Variables
+Example:
+
+```env
+DISCORD_TOKEN=…
+DISCORD_CLIENT_ID=…
+DISCORD_GUILD_ID=…
+DEVELOPER_DISCORD_IDS=123456789012345678,987654321098765432
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/doubt_bot
+```
+
+Developers are parsed in `src/constants/developers.ts`. An empty or missing list blocks **developer-only** commands such as `/botstaff`.
+
+## Optional variables
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | MongoDB URI for Prisma CLI tools (`prisma db push`, etc.). Not used at runtime. |
-| `TOPGG_TOKEN` | [Top.gg](https://top.gg/) API token for automatic stat posting |
+| `NODE_ENV` | `development` or `production` (affects logging expectations; default `development` in `.env.example`) |
+| `ERROR_LOG_CHANNEL_ID` | Channel ID for error reporting (when wired in your deployment) |
+| `CLEAR_GUILD_COMMANDS_ON_BOOT` | Set `true` only for **one-time** guild command cleanup — not normal boots |
+| `MONGO_SOURCE_URL` | Read-only Mongo URI for `yarn migrate:mongo` from legacy Doubt-Discord-Bot |
+| `SOURCE_DATABASE_URL` | Alias for `MONGO_SOURCE_URL` |
 
-### Production Toggle Behavior
+### Mongo source (cutover only)
 
-The `PRODUCTION` flag controls which set of credentials the bot uses:
+Legacy production data lives in MongoDB on [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot). The TypeScript bot stores runtime data in Postgres. For a one-time import:
 
-```text
-PRODUCTION=false  →  DEV_TOKEN, DEV_CLIENT_ID, DEV_MONGODB_URI
-PRODUCTION=true   →  CLIENT_TOKEN, CLIENT_ID, MONGODB_URI
+```env
+DATABASE_URL=postgresql://…/doubt_bot
+MONGO_SOURCE_URL=mongodb://…/doubt_legacy
 ```
 
-The guild ID for command registration:
+Run migrations on Postgres **before** `yarn migrate:mongo`. See [Engineering Guide](/reference/engineering-guide#mongopostgres-data-migration).
 
-```text
-PRODUCTION=false  →  DEV_GUILD_ID
-PRODUCTION=true   →  GUILD_ID
-```
+## Developer access
 
-<Note>
-Environment variables are strings. Token, client ID, and guild ID selection compare against `"true"`, but MongoDB URI selection uses `process.env.PRODUCTION` truthiness. With `PRODUCTION=false` as a string, `config.handler.mongodb.uri` may still select `MONGODB_URI`. Verify the generated `src/config.js` values before running a bot. See the [Engineering Guide](/reference/engineering-guide) for details.
-</Note>
+Users listed in `DEVELOPER_DISCORD_IDS`:
 
----
+- Run **`/botstaff`** (`add`, `remove`, `list`, `migrate`)
+- Always pass **staff-only** guards (same as a `BotStaff` row)
+- Receive display-only **`bot-staff`** badge sync on relevant paths (see `badgeService`)
 
-## Runtime Configuration (`src/config.js`)
+Developer-only gates use the `@Guard(DeveloperOnly)` decorator in `src/guards/accessGuards.ts`.
 
-Copy `src/example.config.js` to `src/config.js` and customize.
+## Global bot staff
 
-### Structure
-
-```js
-module.exports = {
-  client: {
-    token: "...",   // Auto-selected based on PRODUCTION
-    id: "...",      // Auto-selected based on PRODUCTION
-  },
-  variables: {
-    channels: {
-      logs: "",          // Channel ID for error logging
-      botGuilds: "",     // Voice channel renamed to show guild count
-      botUsers: "",      // Voice channel renamed to show user count
-    },
-    dbName: "...",       // "production" or "development" (auto-set)
-    supportServerId: "", // GUILD_ID value
-  },
-  moderation: {
-    developers: [""],    // Array of user IDs with developer access
-  },
-  handler: {
-    deploy: true,        // (unused by current code)
-    guildDeploy: true,   // (unused by current code)
-    guildId: "",         // Guild for developer command deployment
-    commands: {
-      slash: true,       // Enable/disable slash commands
-      user: true,        // Enable/disable user context menus
-      message: true,     // Enable/disable message context menus
-    },
-    mongodb: {
-      uri: "",           // Auto-selected MongoDB URI
-      toggle: true,      // Enable/disable database connection
-    },
-  },
-};
-```
-
-### Key Configuration Notes
-
-#### `moderation.developers`
-
-Array of Discord user ID strings. Users listed here can use developer-only commands (`/eval`, `/deploy`, `/badge`, etc.). If this array is empty or missing, all developer commands are blocked with a configuration error message.
-
-See [Security](/security) for eval sandbox rules and developer command gates.
-
-#### Global bot staff
-
-Cross-guild bot staff is stored in MongoDB (`BotStaff` collection) and managed with `/botstaff`. Staff-only commands check that ACL at runtime — **not** guild roles and **not** badge assignments.
+Cross-guild bot staff is stored in PostgreSQL (`BotStaff` model) and managed with **`/botstaff`** (developers only). Staff-only commands use `@Guard(StaffOnly)` — privilege comes from the **`BotStaff` table**, not guild roles and **not** from holding the `bot-staff` badge.
 
 | Who | Staff-only access |
 |-----|-------------------|
-| Users in `moderation.developers` | Always allowed |
-| Users with a `BotStaff` row | Allowed |
+| IDs in `DEVELOPER_DISCORD_IDS` | Always allowed |
+| Row in `BotStaff` (`discordId`) | Allowed |
 | Everyone else | Denied (fail-closed) |
 
-The reserved `bot-staff` badge (🛡️ Bot Staff) is synced when staff are added or removed, but it is **display-only**. Privilege never comes from "has badge."
+The reserved badge key is **`bot-staff`** (🛡️ Bot Staff). It is synced when staff are added or removed; it is **display-only**. `/badge` cannot create, update, or delete reserved keys or lookalikes that normalize to `bot-staff`.
 
 <Warning>
-`config.moderation.staffRoles` was removed. Do not deploy with an empty `BotStaff` collection and expect staff-only commands to keep working — there is no silent fallback to guild roles.
+Do not deploy with an empty `BotStaff` table and expect staff-only commands to work for guild moderators. There is no fallback to legacy `moderation.staffRoles` in doubt-bot.
 </Warning>
 
-**Cutover checklist** (upgrade from `staffRoles`):
+### BotStaff cutover checklist (Postgres)
 
-1. Deploy the BotStaff update while keeping `moderation.staffRoles` in your live `config.js` (do not remove it yet).
-2. Run **`npx prisma db push`** so the `botstaff` collection exists — `/botstaff migrate` writes via Prisma and will fail if the collection is missing.
-3. While `staffRoles` is still present, run **`/botstaff migrate`** to import support-guild members who hold those roles into `BotStaff`. If you already removed `staffRoles`, add each person with **`/botstaff add <user>`** instead.
-4. Confirm with **`/botstaff list`**, then remove `staffRoles` from config.
+Order matters — schema before data before badge sync:
 
-See [Security](/security#global-bot-staff-acl) for ACL behavior and [Database](/reference/database#botstaff) for the schema.
+1. Deploy doubt-bot build that includes the current Prisma schema.
+2. Run **`yarn prisma:migrate:deploy`** (or `yarn setup:prod`) so `BotStaff`, `Badge`, and related tables exist.
+3. **Import staff rows:**
+   - **From legacy Mongo:** run `yarn migrate:mongo` (includes BotStaff and badge sync), **or**
+   - **Manually:** each developer runs **`/botstaff add <user>`** for every global staff member.
+4. Optional maintenance: **`/botstaff migrate`** re-syncs the 🛡️ badge for all existing `BotStaff` rows (does **not** import legacy `staffRoles` from config).
+5. Confirm with **`/botstaff list`**.
 
-#### `handler.mongodb.toggle`
+Legacy JS operators who still have `moderation.staffRoles` in `config.js` on Doubt-Discord-Bot should finish staff migration **before** cutover using that bot's `/botstaff migrate`, or rely on the Mongo migrator's BotStaff import — not the TypeScript `/botstaff migrate` subcommand.
 
-Set to `false` to skip the database connection entirely. The bot will start but all database-dependent features (economy, AFK, tickets, etc.) will fail.
+See [Security](/security#global-bot-staff-acl) and [Database — BotStaff](/reference/database#botstaff).
 
-#### `variables.channels.botGuilds` / `botUsers`
+## Docker
 
-The bot renames these channels every 30 minutes to display current guild and user counts. If these IDs are empty or invalid, the bot will log non-fatal errors periodically. Set to valid voice channel IDs in your support guild, or leave empty and ignore the errors.
+The sample `docker-compose.yml` in doubt-bot passes:
+
+- `DISCORD_TOKEN`, `DATABASE_URL`, `DEVELOPER_DISCORD_IDS`, `NODE_ENV`, `CLEAR_GUILD_COMMANDS_ON_BOOT`
+
+Build and run the `app` service after `db` is healthy, or point `DATABASE_URL` at your existing Postgres server when deploying outside compose.
+
+## Slash-only / intents
+
+The discordx client in `src/bot.ts` does **not** request `GatewayIntentBits.MessageContent`. Keep Message Content Intent **disabled** in the Developer Portal unless you intentionally change AFK architecture.
+
+AFK clearing and mention notifications use `messageCreate` with `message.mentions` — not guild message body text.

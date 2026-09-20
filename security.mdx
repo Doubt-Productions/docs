@@ -1,108 +1,106 @@
 ---
 title: "Security"
-description: "Permission gates, eval sandbox, ticket close rules, and setup authorization for Doubt Discord Bot"
+description: "Permission gates, BotStaff ACL, setup authorization, and ticket close rules for doubt-bot"
 ---
 
 <Note>
-This page documents operator-facing security behavior from [PR #130](https://github.com/Doubt-Productions/Doubt-Discord-Bot/pull/130) on the Doubt Discord Bot `main` branch. It covers permission gates, sandboxing, and authorization checks — not every change in that PR (for example health-server bind address or intent trimming).
+This page reflects security behavior on **[doubt-bot](https://github.com/Doubt-Productions/doubt-bot)** `main` (TypeScript / PostgreSQL). Legacy [Doubt-Discord-Bot](https://github.com/Doubt-Productions/Doubt-Discord-Bot) may differ until cutover.
 </Note>
 
-## Slash command Discord permissions
+## Slash command permissions
 
-Several slash commands set Discord `default_member_permissions` when registered. Discord hides these commands from members who lack the permission in the command picker. The bot also enforces the same permissions at runtime via `userPermissions` in the command validator.
+Guild slash commands use discordx **guards** and Discord permission checks where implemented:
 
-| Command | Discord permission |
-|---------|-------------------|
-| `/kick` | Kick Members |
-| `/ban` | Ban Members |
-| `/unban` | Ban Members |
-| `/timeout` | Moderate Members |
-| `/automod` (all subcommands) | Manage Server |
-| `/setup` | Manage Server |
-| `/embedcreator` | Manage Messages |
+| Surface | Gate |
+|---------|------|
+| `/setup` | `@Guard(ManageGuildOnly)` — **Manage Server** |
+| `/rank reset`, `/rank set` | Runtime check for **Manage Server** |
+| Setup components (welcome, tickets, JTC) | `denyUnlessManageGuild()` in `src/utils/setupGuard.ts` |
 
-Commands without `default_member_permissions` (economy, general, info, utility `/ping`, and so on) remain visible to members who can use slash commands in the guild.
+Other commands (economy, `/ping`, `/help`, `/afk`, …) do not set Discord `default_member_permissions` unless added in future ports.
 
-### Syncing permission changes after deploy
+### After permission changes
 
-Command registration runs when the bot becomes ready and syncs `default_member_permissions` to Discord via `registerCommands.js`.
-
-<Warning>
-**After deploying code that changes slash-command permission requirements, restart the bot.** Without a restart, members may still see stale permission visibility until the next ready-time sync.
-</Warning>
+Restart the bot after deploying code that changes slash metadata so `bot.initApplicationCommands()` on ready re-syncs guild commands.
 
 ## Developer eval sandbox
 
-`/eval` runs code in an isolated VM sandbox (`safeEval.js`). It is developer-only — the user's Discord ID must appear in the bot's developers allowlist (`config.moderation.developers`). If the allowlist is missing or empty, eval is denied.
+`/eval` and other legacy **devOnly** utilities from Doubt-Discord-Bot are **not shipped in doubt-bot yet**. When ported, they should remain **developer-only** (`DEVELOPER_DISCORD_IDS`) and run inside a restricted VM sandbox (timeout, blocked identifiers such as `process`, `require`, `fs`, `child_process`, …) — matching the legacy `safeEval.js` behavior.
 
-All commands under `devOnly/` are developer-only (fail-closed in `devCommandValidator.js`). Other developer commands (for example `/badge`) are allowlist-gated but do **not** use the eval sandbox.
-
-### Sandbox rules
-
-| Constraint | Value |
-|------------|-------|
-| Execution timeout | 3 seconds |
-| Maximum code length | 2000 characters |
-| Blocked identifiers | `process`, `require`, `module`, `exports`, `__dirname`, `__filename`, `global`, `globalThis`, `Buffer`, `child_process`, `fs`, `net`, `http`, `https`, `worker_threads` |
-
-Blocked identifiers are matched as whole words before execution. A match fails closed.
+Until eval is ported, do not expose arbitrary code execution on production bots.
 
 <Tip>
-Eval is a developer convenience, not a general-purpose scripting surface. Keep the developers allowlist limited to trusted operator accounts.
+Keep `DEVELOPER_DISCORD_IDS` limited to trusted operator accounts.
 </Tip>
 
 ## Ticket close authorization
 
+Ticket close is enforced in `src/utils/ticketAuth.ts` and the `ticket-close` button handler.
+
 A member may close a ticket only if **any** of the following is true:
 
-1. They have the **Manage Channels** guild permission.
-2. They have the guild's configured **ticket support role** (`ticketData.Role`).
-3. They are the **ticket opener** (detected via their View Channel overwrite on the ticket channel).
+1. They have **Manage Channels** on the guild.
+2. They have the configured **ticket staff role** (`Setup.ticketStaffRoleId`).
+3. They are the **ticket opener** (their user ID has an allow **View Channel** overwrite on the ticket channel).
 
-Everyone else receives an ephemeral denial. Opening a ticket from the panel is separate — members who can see the panel can open a ticket, subject to the usual one-open-ticket-per-user rule.
+Everyone else receives an ephemeral denial. Opening a ticket uses the panel select menu and **modal** (`ticket-modal`); members who can see the panel can open a ticket subject to the one-open-ticket check.
 
 ## Setup wizard authorization
 
-`/setup` requires **Manage Server** at both the Discord API level (`default_member_permissions`) and at runtime (`userPermissions`).
+`/setup` requires **Manage Server** via `ManageGuildOnly`.
 
-Follow-up setup components (welcome and ticket flows) also require Manage Server via `setupGuard.js`. Channel and role picker collectors bind to the member who triggered that step — another member cannot answer those collectors, even if they also have Manage Server.
+Follow-up setup interactions call `denyUnlessManageGuild()` on welcome, ticket, and JTC components. The helper `setupComponentFilter()` exists to bind collectors to the initiating user where message collectors are used; welcome **message text** is collected through a **modal**, not a MessageCollector.
 
 ## Global bot staff ACL
 
-Staff-only developer commands (`options.staffOnly: true`, such as `/staffonly` and `/nsfw`) use a **Mongo-backed access-control list**, not guild roles.
+Staff-only commands use `@Guard(StaffOnly)` in `src/guards/accessGuards.ts`. Privilege is checked with `canUseStaffCommands()` in `src/services/botStaffService.ts` against PostgreSQL — **not** guild roles.
 
 ### Privilege source of truth
 
 | Layer | Role |
 |-------|------|
-| `BotStaff` Mongo collection | **ACL** — determines who may run `staffOnly` commands |
-| `config.moderation.developers` | Developers always pass the `staffOnly` gate |
-| `bot-staff` badge (🛡️ Bot Staff) | **Display-only** public mark; privilege is never "has badge" |
+| `BotStaff` Postgres table (`discordId`) | **ACL** — who may pass `StaffOnly` |
+| `DEVELOPER_DISCORD_IDS` | Developers always pass staff gates |
+| `bot-staff` badge (`UserBadge` → reserved `Badge`) | **Display-only**; never grants command access |
 
-The reserved badge ID is `bot-staff`. `/badge` cannot create, edit, delete, give, or take it — management is developer-only via `/botstaff`.
+The reserved badge key is `bot-staff`. `/badge` rejects reserved keys and lookalikes (`bot_staff`, `botstaff`, …). Management is via **`/botstaff`** (developers only).
 
 ### Fail-closed behavior
 
-`staffOnly` denies non-developers who are not in `BotStaff`. There is **no** fallback to `moderation.staffRoles` or guild role membership.
+`StaffOnly` denies users who are neither developers nor in `BotStaff`. There is **no** fallback to legacy `moderation.staffRoles`.
 
-If the `BotStaff` collection is empty, the denial message explicitly tells operators to run `/botstaff migrate` (while legacy `staffRoles` is still in config) or `/botstaff add` for each person. Staff-only commands do not silently work for anyone until the ACL is populated.
+If `BotStaff` is empty, staff-only commands fail until operators run **`/botstaff add`** or import rows via **`yarn migrate:mongo`**.
 
 ### Who can manage staff
 
-Only users in `config.moderation.developers` can run `/botstaff` (`add`, `remove`, `list`, `migrate`). Each `add` or `migrate` action records `addedBy` and `addedAt` in Mongo.
+Only developers (`DeveloperOnly` guard) may run `/botstaff add`, `remove`, `list`, or `migrate`. Each `add` records `addedBy` and `addedAt`; removals write `BotStaffRemoval` audit rows.
 
-<Tip>
-After adding or removing staff, use `/botstaff list` to verify the ACL before removing legacy `staffRoles` from config.
-</Tip>
+### Cutover order (operators)
+
+<Warning>
+Apply Postgres **migrations before** writing BotStaff data or running `/botstaff`. `/botstaff migrate` only re-syncs badges for existing rows — it does not create staff from legacy config.
+</Warning>
+
+1. `yarn prisma:migrate:deploy` on the target database.
+2. Import staff (Mongo migrator and/or `/botstaff add`).
+3. Run `/botstaff migrate` if badge display is out of sync.
+4. Verify with `/botstaff list`.
+
+## Badge administration
+
+`/badge` subcommands are `@Guard(StaffOnly)` — bot staff **or** developers. Reserved badges cannot be created, updated, or deleted through `/badge`. Granting the 🛡️ mark for staff is always through **`/botstaff`**, not manual badge grants.
 
 ## Defense in depth
 
 | Surface | Primary gate |
 |---------|----------------|
-| Moderation slash commands | Discord `default_member_permissions` + runtime `userPermissions` |
-| `/setup` and setup components | Manage Server + initiating-user collector binding |
-| Ticket close button | Opener, support role, or Manage Channels |
-| `/eval` | Developer allowlist + VM sandbox |
-| Other `devOnly/` commands | Developer allowlist (fail-closed) |
-| `staffOnly` dev commands | Developer allowlist **or** `BotStaff` Mongo ACL (fail-closed) |
-| Reserved `bot-staff` badge | Locked in `/badge`; managed only via `/botstaff` |
+| `/setup` and setup components | Manage Server (`ManageGuildOnly` / `denyUnlessManageGuild`) |
+| Ticket close button | Opener, ticket staff role, or Manage Channels |
+| `/botstaff` | Developer allowlist |
+| `StaffOnly` commands (e.g. `/badge`) | Developer allowlist **or** `BotStaff` Postgres ACL |
+| Reserved `bot-staff` badge | Locked in `/badge`; synced via `/botstaff` |
+| `/eval` (legacy) | Not available on doubt-bot until ported |
+
+## Message Content Intent
+
+Regression tests in doubt-bot assert the client intent list excludes Message Content. AFK uses mention metadata only (`src/events/afkCheck.ts`). Do not enable Message Content Intent for standard deployments.
