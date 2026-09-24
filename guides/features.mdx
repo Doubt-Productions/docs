@@ -70,11 +70,25 @@ Stored in `Afk` (`guildId`, `discordId`, `reason`, stored nickname).
 
 ## Join-to-Create (JTC)
 
-Configured in `/setup` (`JtcSetup`, `JtcChannel` models).
+Configured in `/setup` (`JtcSetup`, `JtcChannel` Postgres models). `voiceStateUpdate` in doubt-bot drives the lifecycle.
 
-1. Admin sets hub channel and category.
-2. Joining the hub creates a temporary voice channel; owner gets manage permissions.
-3. `voiceStateUpdate` handles transfer/delete when the owner leaves.
+### Setup
+
+1. Admin sets the **hub** voice channel and **category** via `/setup` → JTC flow.
+2. Only non-bot members trigger JTC when they **join** the hub (not when moving from hub to hub).
+
+### Hub join
+
+When a member enters the hub:
+
+1. **Hub join cooldown** — A **30 second** per-user, per-guild guard limits how often the bot reacts to hub joins (`voiceStateUpdate.ts`, in-memory map keyed by `guildId:userId`). Joins inside the window are ignored so rapid hub re-joins cannot spam new channels. This cooldown is **not** stored in Postgres; it resets on process restart.
+2. **Reuse owned channel** — The bot looks up an existing `JtcChannel` row for that member (`getJtcChannelByOwner`). If the tracked Discord channel still exists and is voice-based, the member is moved there instead of creating a duplicate. If the row is stale (channel deleted or missing from cache), the Postgres row is removed and a new channel is created.
+3. **Create** — Otherwise the bot creates `🔊 | <displayName>` under the configured category, grants the owner **Connect** and **Manage Channels**, records `JtcChannel` in Postgres, briefly denies **Connect** on the hub for that member (30s), then moves them into the new room after a short delay.
+
+### While in a temp channel
+
+- When the **owner** leaves and others remain, ownership transfers to a random remaining member (name and permissions update; `JtcChannel.ownerId` in Postgres).
+- When the owner leaves and the channel is **empty**, the bot deletes the Discord channel and removes the `JtcChannel` row.
 
 ---
 
