@@ -3,6 +3,8 @@ title: "Privacy Policy"
 description: "Privacy Policy for Doubt Discord Bot"
 ---
 
+_Last updated: 19 October 2026_
+
 ## Introduction
 
 Welcome to Doubt, a Discord bot designed to enhance your experience on Discord. Protecting your privacy is important to us. This Privacy Policy outlines how we collect, use, and protect your information when you use Doubt.
@@ -19,9 +21,20 @@ When you use Doubt, we may collect the following types of information:
 ### 1.2 Interaction Data
 
 - **Commands Issued**: Logs of commands issued to the bot to improve functionality and user experience.
-- **Messages**: Content of messages interacting with the bot may be temporarily stored to process requests.
+- **Moderation records**: When a moderator warns, times out, kicks or bans a member, Doubt stores a case with the member's ID, the moderator's ID, the action, the reason and the time.
+- **AutoMod records**: When Discord's AutoMod acts on a message under a rule Doubt manages, Doubt stores the member's ID, the channel, the rule and the matched keyword. Doubt does not store the message itself.
 
-### 1.3 Usage Data
+### 1.3 Ticket Transcripts
+
+Doubt reads message content for one feature only: ticket transcripts.
+
+- **What is collected**: When a support ticket is closed, Doubt reads the message history of that ticket channel once and saves it as a transcript. The transcript holds each message's author (name, ID and avatar), time, text, embeds and attachment links.
+- **Where it applies**: Only private ticket channels. Those channels are visible only to the member who opened the ticket, members staff added to it, the server's support role and server admins. Doubt does not read or store messages anywhere else.
+- **Who can see it**: The transcript is posted to the server's staff log channel. It can also be viewed by that server's staff in the Doubt dashboard. Staff of other servers cannot see it.
+- **Opting out**: Members cannot opt out of the transcript of a ticket they take part in, because the transcript is the record of that support conversation. Members who don't want their messages recorded should not post in a ticket.
+- **AI and analytics**: Transcripts and message content are never used to train machine learning or AI models, and are never used for analytics or advertising.
+
+### 1.4 Usage Data
 
 - **Bot Usage Statistics**: Data on how often and in what manner the bot is used to improve the service.
 
@@ -30,6 +43,7 @@ When you use Doubt, we may collect the following types of information:
 The information we collect is used in the following ways:
 
 - **To Provide and Maintain the Bot**: Ensuring the bot functions correctly and efficiently.
+- **To Keep Records for Server Staff**: Moderation cases, AutoMod records and ticket transcripts let a server's staff review what happened in their server.
 - **To Improve the Bot**: Analyzing usage patterns to enhance features and user experience.
 - **To Communicate with Users**: Responding to user inquiries and providing support.
 
@@ -40,6 +54,8 @@ We do not sell or share your personal data with third parties except in the foll
 - **With Your Consent**: We may share information with your explicit consent.
 - **Legal Requirements**: If required by law, we may disclose information to comply with legal obligations.
 
+Data is stored in a PostgreSQL database hosted in the European Union.
+
 ## 4. Data Security
 
 We take reasonable measures to protect your data from unauthorized access or disclosure. However, no method of transmission over the internet or electronic storage is completely secure. Therefore, we cannot guarantee absolute security.
@@ -48,13 +64,15 @@ We take reasonable measures to protect your data from unauthorized access or dis
 
 We retain your information for as long as necessary to provide the services or as required by law. Interaction data may be retained for a shorter period to improve the bot’s functionality.
 
+Ticket transcripts are kept until a server admin deletes them in the Doubt dashboard, or until deletion is requested at the address below.
+
 ## 6. Your Rights
 
 You have the following rights regarding your data:
 
 - **Access**: You can request access to the information we hold about you.
 - **Correction**: You can request corrections to any inaccurate or incomplete data.
-- **Deletion**: You can request deletion of your data, subject to legal obligations.
+- **Deletion**: You can request deletion of your data, including ticket transcripts you appear in, subject to legal obligations.
 - **Restriction**: You can request the restriction of processing of your data under certain circumstances.
 
 ## 7. Changes to This Privacy Policy
@@ -63,6 +81,6 @@ We may update this Privacy Policy from time to time. Any changes will be posted 
 
 ## 8. Contact Us
 
-If you have any questions or concerns about this Privacy Policy, please contact us at contact@zvapor.xyz.
+If you have any questions or concerns about this Privacy Policy, or want to make a request about your data, please contact us at [contact@doubtbot.eu](mailto:contact@doubtbot.eu).
 
 By using Doubt, you acknowledge that you have read and understood this Privacy Policy and agree to the collection and use of your information as described herein.
